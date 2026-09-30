@@ -1,6 +1,6 @@
 # METAL SNAKE: COSMIC CALAMITY
 
-A retro **3D isometric** stealth game in the spirit of 16-bit *Metal Gear*. The characters and props are anime-style, cel-shaded and ink-outlined, rendered at a low resolution and dithered so everything reads as pixel art. The UI takes its cues from Bungie's *Marathon* trilogy (AIs and aliens, steel terminals, the motion sensor).
+A retro stealth game in the spirit of 16-bit *Metal Gear*, rendered as **faux-2D in 3D** ("HD-2D"). A cabinet-projection 3D camera draws floors and wall fronts exactly like a SNES tileset. Characters, drones and props are pixel-art sprites standing in the world, and depth, occlusion and x-ray silhouettes come from the 3D depth buffer. The UI takes its cues from Bungie's *Marathon* trilogy (AIs and aliens, steel terminals, the motion sensor).
 
 Two years into an uneasy "V"-style truce, Earth and the reptilian **Vyrr** share an occupation. The Vyrr are building something. The military sends in **Snake**, a cyborg operative bonded to a military AI called **IRIS**. His route runs through their warehouses, a field camp and a research annex. Then he stows away to their mothership in orbit.
 
@@ -66,7 +66,8 @@ node touch-zoom-guard/test/tap-spam.mjs "http://localhost:4180/?stage=0&skipintr
 | `index.html`, `css/style.css` | Shell, HUD, screens, terminal UI (Marathon-style steel bezels) |
 | `js/levels.js` | ASCII maps (5 stages and the POW camp), legend, briefings and story, cast |
 | `js/game.js` | Simulation: player, enemy AI and perception, alert phases, bullets, pathfinding, prisoners, capture, motion sensor. No rendering. |
-| `js/render3d.js` | three.js isometric renderer. Procedural low-poly models, toon materials, ink outlines, instanced level blocks, 3D vision cones, x-ray silhouettes, and a low-res + 15-bit dither post pass. Reads the sim state only. |
+| `js/render3d.js` | three.js faux-2D renderer. It uses a top-down ortho camera with a cabinet shear, which gives an undistorted floor and a 1:1 height rise, so depth = height. Its parts: merged wall slabs, prop faces, pixel billboards, floor vision cones, x-ray silhouettes, and a pixel-locked camera. The frame renders at ~224 lines, is scaled up by an exact integer, and uses 15-bit colour. It reads the sim state only. |
+| `js/sprites.js` | Procedural pixel art for the 3D view. Character frames (4 directions, walk cycle, shoot/punch/stun poses, KO bodies), drones, cameras, pickups, trees, barrels, cores and grass tufts. Also the wall and prop top/front textures, whose rim edges appear only on outer boundaries. 1px ink outlines are baked in. |
 | `js/art.js` | Pixel tile textures per theme, anime terminal portraits, 3x5 bitmap font |
 | `vendor/three.min.js` | three.js r128 (MIT), copied from turn-tactics |
 | `js/audio.js` | WebAudio SFX and step-sequenced chiptune music |

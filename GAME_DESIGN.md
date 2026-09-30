@@ -155,3 +155,17 @@ Screen shake on takedowns, hits and charges. A red hit flash with an invincibili
   - `sim-check`: 21/21 PASS, including capture → breakout → rescue.
   - `smoke`: 4 profiles PASS with 0 errors and 0 scroll; touch fire and act verified.
   - tap-spam: PASS on iPhone and iPad.
+
+### faux-2D look (branch `claude/faux-2d-look`)
+- **Camera:** isometric cubes → faux-2D in 3D. The iso camera became a straight-on cabinet projection.
+  - It is a top-down ortho camera plus a shear, so floors are 1 texel = 1 px and each unit of height rises 1:1 on screen.
+  - Movement is screen-aligned again.
+- **Walls:** the black-outlined per-tile cubes became merged slabs.
+  - Each wall has a top face with rim light and shadow only on its outer edges, plus a separate front-face texture.
+  - Floors get baked contact shadows.
+- **Sprites:** characters, drones, cameras, trees, barrels, cores, pickups and grass became pixel-art billboards (sprites.js) with baked outlines and 4-direction walk cycles.
+  - The x-ray silhouettes now work per sprite.
+- **Output:** the camera is pixel-locked and clamped to the map. The frame is scaled up by an exact integer, uses 15-bit colour, and has no dither.
+- **Verification:**
+  - `sim-check`: 21/21 PASS.
+  - `smoke`: 4 profiles PASS with 0 errors and 0 scroll.
