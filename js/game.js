@@ -12,6 +12,7 @@ const Game = (() => {
     'L': { s: 1, o: 1, hide: 'LOCKER' }, 'B': { s: 1, o: 1, hide: 'BIN' }, 'O': { s: 1, o: 1, hide: 'BOX' },
     'C': { s: 1, o: 0 }, '=': { s: 1, o: 0 }, 'D': { s: 1, o: 1, door: 1 },
     'Z': { s: 1, o: 0, core: 1 }, 'z': { s: 1, o: 0 }, 'I': { s: 1, o: 0, intel: 1 }, 'i': { s: 1, o: 0 },
+    'J': { s: 1, o: 0, jail: 1 }, 'G': { s: 1, o: 1, gear: 1 }, 'k': { s: 1, o: 1 },
   };
   const EMPTY = {};
   const ENEMY_STATS = {
@@ -22,7 +23,8 @@ const Game = (() => {
   };
 
   let S = null;         // world state
-  let hooks = {};       // callbacks into UI (toast, codec, complete, gameover)
+  let hooks = {};       // callbacks into UI (toast, codec, complete, gameover, captured)
+  let viewYaw = 0;      // camera azimuth; movement input is rotated by it
 
   // ------------------------------------------------------------------ helpers
   const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -41,6 +43,7 @@ const Game = (() => {
   }
   function setTile(tx, ty, ch) {
     S.grid[ty * S.w + tx] = ch;
+    S.tileVersion++;
     drawTileToBg(tx, ty);
     if (ty + 1 < S.h) drawTileToBg(tx, ty + 1);
     if (ty > 0) drawTileToBg(tx, ty - 1);
@@ -57,9 +60,10 @@ const Game = (() => {
   }
 
   // ------------------------------------------------------------------ level load
-  function load(index, h) {
+  function load(arg, h) {
     hooks = h || hooks;
-    const L = LEVELS[index];
+    const L = typeof arg === 'number' ? LEVELS[arg] : arg;
+    const index = typeof arg === 'number' ? arg : -1;
     const rows = L.map;
     const hgt = rows.length, w = Math.max(...rows.map((r) => r.length));
     S = {
@@ -69,7 +73,7 @@ const Game = (() => {
       t: 0, hasCard: false, intel: false, cores: 0, coresTotal: 0, escape: null,
       cam: { x: 0, y: 0 }, shake: 0, flash: 0, done: false, over: false, overT: 0,
       stats: { time: 0, alerts: 0, kills: 0, takedowns: 0, shots: 0, damage: 0 },
-      prompt: '', msgCD: 0, bg: null, timers: [],
+      prompt: '', msgCD: 0, bg: null, timers: [], tileVersion: 0, pows: [], trail: [], trailT: 0,
     };
     let px0 = 32, py0 = 32;
     for (let y = 0; y < hgt; y++) {
@@ -88,6 +92,7 @@ const Game = (() => {
           case 'o': S.enemies.push(makeEnemy('drone', cx, cy, { mode: 'drone' })); ch = L.floor; break;
           case 'c': S.enemies.push(makeEnemy('camera', cx, cy, { mode: 'camera' })); ch = L.floor; break;
           case 'r': case 'a': case 'K': S.pickups.push({ type: ch, x: cx, y: cy, taken: false }); ch = L.floor; break;
+          case 'h': case 'y': case 'u': S.pows.push({ kind: { h: 'human', y: 'hybrid', u: 'ai' }[ch], id: `${L.id}-${x}-${y}`, x: cx, y: cy, dir: Math.PI / 2, state: 'caged', anim: 0, moving: false }); ch = L.floor; break;
         }
         if (ch === 'Z') S.coresTotal++;
         if ('EZ=D'.includes(ch)) S.anim.push([x, y]);
@@ -95,7 +100,8 @@ const Game = (() => {
       }
     }
     S.player = {
-      x: px0, y: py0, dir: -Math.PI / 2, face: 1, hp: 100, maxHp: 100, ammo: index === 0 ? 8 : 10, maxAmmo: 30,
+      x: px0, y: py0, dir: -Math.PI / 2, face: 1, hp: 100, maxHp: 100, ammo: L.startAmmo != null ? L.startAmmo : (index === 0 ? 8 : 10), maxAmmo: 30,
+      caged: !!L.isPow,
       moving: false, anim: 0, lock: 0, inv: 0, fireCD: 0, knockCD: 0, hidden: null, unhideT: 0,
       punchT: 0, shootT: 0, dead: false, planting: null,
     };
@@ -247,7 +253,7 @@ const Game = (() => {
 
   function canSeePlayer(e) {
     const P = S.player;
-    if (P.hidden || P.dead) return false;
+    if (P.hidden || P.dead || P.caged) return false;
     const range = e.range * (S.phase === 'alert' ? 1.3 : 1);
     const dx = P.x - e.x, dy = P.y - e.y, d = Math.hypot(dx, dy);
     if (d > range) return false;
@@ -342,6 +348,17 @@ const Game = (() => {
       }
     } else {
       e.aw = Math.max(0, e.aw - dt * (e.state === 'suspicious' ? 0.12 : 0.3));
+    }
+
+    // ---- escaped prisoners are as suspicious as the player
+    if (!e.sees && S.phase !== 'alert') {
+      for (const w of S.pows) {
+        if (w.state !== 'follow' || !canSeePoint(e, w.x, w.y)) continue;
+        e.aw += (1.2 + 2.5 * Math.pow(1 - Math.min(1, Math.hypot(w.x - e.x, w.y - e.y) / e.range), 2)) * dt;
+        if (e.aw >= 1) { setIcon(e, '!'); triggerAlert(w.x, w.y); }
+        else if (e.aw > 0.3 && e.type !== 'camera' && e.state !== 'suspicious') becomeSuspicious(e, w.x, w.y);
+        break;
+      }
     }
 
     // ---- bodies
@@ -575,7 +592,7 @@ const Game = (() => {
     P.moving = false;
     if (P.planting) {
       P.planting.t -= dt;
-      if (P.planting.t <= 0) finishPlant(P.planting.tx, P.planting.ty);
+      if (P.planting.t <= 0) { if (P.planting.jail) finishLock(P.planting.tx, P.planting.ty); else finishPlant(P.planting.tx, P.planting.ty); }
       Input.take('act'); Input.take('fire');
       return;
     }
@@ -590,6 +607,10 @@ const Game = (() => {
     if (ax.mag > 0.15) {
       const sneak = ax.mag < 0.62;
       const sp = PLAYER_SPEED * (sneak ? 0.55 : 1);
+      // input is screen-relative; rotate it onto the ground plane for the camera's azimuth
+      const cz = Math.cos(viewYaw), sz = Math.sin(viewYaw);
+      const wx = ax.x * cz + ax.y * sz, wy = -ax.x * sz + ax.y * cz;
+      ax.x = wx; ax.y = wy;
       P.dir = Math.atan2(ax.y, ax.x);
       P.face = faceFromDir(P.dir);
       tryMovePlayer(ax.x * sp * dt, ax.y * sp * dt);
@@ -644,7 +665,7 @@ const Game = (() => {
     let best = null, bs = 1e9;
     for (let ty = ty0 - 1; ty <= ty0 + 1; ty++) for (let tx = tx0 - 1; tx <= tx0 + 1; tx++) {
       const ch = tileAt(tx, ty), d = def(ch);
-      if (!(d.hide || d.door || d.core || d.intel)) continue;
+      if (!(d.hide || d.door || d.core || d.intel || d.jail || d.gear)) continue;
       const cx = clamp(P.x, tx * TILE, tx * TILE + TILE), cy = clamp(P.y, ty * TILE, ty * TILE + TILE);
       const dd = Math.hypot(P.x - cx, P.y - cy);
       if (dd > 11) continue;
@@ -673,6 +694,8 @@ const Game = (() => {
       if (it.d.door) return S.hasCard ? 'OPEN DOOR' : 'LOCKED';
       if (it.d.core) return 'PLANT CHARGE';
       if (it.d.intel) return 'DOWNLOAD INTEL';
+      if (it.d.jail) return 'PICK LOCK';
+      if (it.d.gear) return 'RECOVER GEAR';
     }
     if (facingWall()) return 'KNOCK';
     return '';
@@ -774,10 +797,71 @@ const Game = (() => {
       later(0.7, () => hooks.codec && hooks.codec(S.def.intel));
       return;
     }
+    if (it.d.gear) {
+      setTile(it.tx, it.ty, 'k');
+      P.ammo = Math.max(P.ammo, 12);
+      Sound.sfx.card();
+      floater(it.tx * TILE + 8, it.ty * TILE - 2, 'GEAR RECOVERED', '#5dff8a');
+      hooks.toast && hooks.toast('RAIL-PISTOL RECOVERED');
+      return;
+    }
+    if (it.d.jail) {
+      P.planting = { tx: it.tx, ty: it.ty, t: 1.2, jail: true };
+      Sound.sfx.plant();
+      floater(it.tx * TILE + 8, it.ty * TILE - 2, 'PICKING...', '#ffd23a');
+      return;
+    }
     if (it.d.core) {
       P.planting = { tx: it.tx, ty: it.ty, t: 1.1 };
       Sound.sfx.plant();
       floater(it.tx * TILE + 8, it.ty * TILE - 2, 'ARMING...', '#ff6af0');
+    }
+  }
+
+  const POW_LINES = {
+    human: ['THANK GOD. GET ME OUT OF HERE!', 'I THOUGHT NOBODY WAS COMING.', 'LEAD THE WAY, SOLDIER.'],
+    hybrid: ['HALF OF ME WAS NEVER HUMAN. ALL OF ME WANTS OUT.', 'MY IMPLANTS CAN HEAR THEIR RADIOS. MOVE QUIETLY.'],
+    ai: ['UNIT K-7 ONLINE. FOLLOWING YOU, SNAKE.', 'CAPTIVE MIND RELEASED. GRATITUDE SUBROUTINE: ENGAGED.'],
+  };
+  function finishLock(tx, ty) {
+    const P = S.player;
+    P.planting = null;
+    setTile(tx, ty, 'j');
+    Sound.sfx.door();
+    burst(tx * TILE + 8, ty * TILE + 8, 8, '#ffd23a', 30);
+    if (P.caged && Math.hypot(P.x - (tx * TILE + 8), P.y - (ty * TILE + 8)) < 40) { P.caged = false; hooks.toast && hooks.toast('YOU\'RE OUT. FIND YOUR GEAR.'); return; }
+    for (const w of S.pows) {
+      if (w.state !== 'caged' || Math.hypot(w.x - (tx * TILE + 8), w.y - (ty * TILE + 8)) > 48) continue;
+      w.state = 'follow';
+      const lines = POW_LINES[w.kind];
+      hooks.toast && hooks.toast(lines[(Math.random() * lines.length) | 0]);
+      floater(w.x, w.y - 14, 'FREED', '#5dff8a');
+    }
+  }
+
+  // freed prisoners walk the player's own trail, so they never need pathfinding
+  function updatePows(dt) {
+    const P = S.player;
+    S.trailT -= dt;
+    if (S.trailT <= 0 && !P.hidden) {
+      S.trailT = 0.08;
+      const l = S.trail[S.trail.length - 1];
+      if (!l || Math.hypot(l.x - P.x, l.y - P.y) > 2) { S.trail.push({ x: P.x, y: P.y }); if (S.trail.length > 120) S.trail.shift(); }
+    }
+    let k = 0;
+    for (const w of S.pows) {
+      w.moving = false;
+      if (w.state !== 'follow') continue;
+      k++;
+      if (P.hidden) continue;
+      const idx = S.trail.length - 1 - k * 5;
+      const tgt = idx >= 0 ? S.trail[idx] : S.trail[0];
+      if (!tgt) continue;
+      const dx = tgt.x - w.x, dy = tgt.y - w.y, d = Math.hypot(dx, dy);
+      if (d < 3) continue;
+      const sp = Math.min(d, PLAYER_SPEED * (d > 30 ? 1.3 : 1) * dt);
+      w.x += dx / d * sp; w.y += dy / d * sp;
+      w.dir = Math.atan2(dy, dx); w.moving = true; w.anim += dt * 9;
     }
   }
 
@@ -820,6 +904,8 @@ const Game = (() => {
     if (req === 'intel' && !S.intel) { msg('DOWNLOAD THE INTEL FIRST'); return; }
     if (req === 'cores' && S.cores < S.coresTotal) { msg(`CORES REMAINING: ${S.coresTotal - S.cores}`); return; }
     S.done = true;
+    S.stats.rescued = S.pows.filter((w) => w.state === 'follow').map((w) => w.id);
+    S.stats.prisoners = S.pows.length;
     Sound.sfx.clear();
     hooks.complete && hooks.complete(S.stats);
   }
@@ -832,14 +918,17 @@ const Game = (() => {
     S.shake = 4; S.flash = 0.25;
     Sound.sfx.hurt();
     burst(P.x, P.y - 4, 6, '#ff4040', 40);
-    if (P.hp <= 0) die('YOU WERE KILLED IN ACTION.');
+    if (P.hp <= 0) {
+      if (S.def.capturable && !S.escape) die('SUBDUED BY VYRR TROOPERS.', true);
+      else die('YOU WERE KILLED IN ACTION.');
+    }
   }
 
-  function die(reason) {
+  function die(reason, captured) {
     const P = S.player;
     if (P.dead) return;
     P.hp = 0; P.dead = true;
-    S.over = true; S.overT = 1.6; S.overReason = reason;
+    S.over = true; S.overT = 1.6; S.overReason = reason; S.captured = !!captured;
     Sound.stopMusic();
     Sound.sfx.gameover();
   }
@@ -912,7 +1001,7 @@ const Game = (() => {
     S.msgCD -= dt;
     if (S.over) {
       S.overT -= dt;
-      if (S.overT <= 0 && !S.overSent) { S.overSent = true; hooks.gameover && hooks.gameover(S.overReason); }
+      if (S.overT <= 0 && !S.overSent) { S.overSent = true; if (S.captured && hooks.captured) hooks.captured(S.overReason); else hooks.gameover && hooks.gameover(S.overReason); }
       updateFx(dt);
       return;
     }
@@ -923,6 +1012,7 @@ const Game = (() => {
     S.seen = false;
     S.prompt = '';
     updatePlayer(dt);
+    updatePows(dt);
     for (const e of S.enemies) updateEnemy(e, dt);
     S.enemies = S.enemies.filter((e) => !(e.dead && e.deadT > 2.5));
     updateBullets(dt);
@@ -985,133 +1075,6 @@ const Game = (() => {
     const col = coneColor(e);
     g.fillStyle = `rgba(${col},${e.sees ? 0.3 : 0.17})`;
     g.fill();
-  }
-
-  function render(g, vw, vh) {
-    if (!S) return;
-    const P = S.player;
-    const th = Art.THEMES[S.theme];
-    // camera
-    const mw = S.w * TILE, mh = S.h * TILE;
-    const tx = P.x - vw / 2, ty = P.y - vh / 2 - 8;
-    S.cam.x += (tx - S.cam.x) * 0.15; S.cam.y += (ty - S.cam.y) * 0.15;
-    let cx = mw <= vw ? (mw - vw) / 2 : clamp(S.cam.x, 0, mw - vw);
-    let cy = mh <= vh ? (mh - vh) / 2 : clamp(S.cam.y, 0, mh - vh);
-    if (S.shake > 0) { cx += rand(-S.shake, S.shake); cy += rand(-S.shake, S.shake); }
-    cx = Math.round(cx); cy = Math.round(cy);
-
-    g.fillStyle = th.bg; g.fillRect(0, 0, vw, vh);
-    g.drawImage(S.bg, -cx, -cy);
-
-    // animated tiles
-    const pulse = (Math.sin(S.t * 4) + 1) / 2;
-    for (const [x, y] of S.anim) {
-      const sx = x * TILE - cx, sy = y * TILE - cy;
-      if (sx < -16 || sy < -16 || sx > vw || sy > vh) continue;
-      const ch = tileAt(x, y);
-      if (ch === 'E') {
-        const ok = !S.def.requires || (S.def.requires === 'intel' ? S.intel : S.cores >= S.coresTotal);
-        g.fillStyle = ok ? `rgba(93,255,138,${0.15 + pulse * 0.3})` : `rgba(255,60,60,${0.1 + pulse * 0.15})`;
-        g.fillRect(sx + 1, sy + 1, 14, 14);
-      } else if (ch === 'Z') {
-        g.fillStyle = `rgba(230,120,255,${0.2 + pulse * 0.4})`; g.fillRect(sx + 4, sy + 1, 8, 13);
-      } else if (ch === '=' && S.theme !== 'lab') {
-        g.fillStyle = `rgba(255,255,255,${0.15 + Math.random() * 0.25})`; g.fillRect(sx, sy + 7, 16, 1);
-      } else if (ch === 'D') {
-        g.fillStyle = S.hasCard ? '#40ff70' : ((S.t * 2 | 0) % 2 ? '#ff3030' : '#601010'); g.fillRect(sx + 11, sy + 13, 1, 1);
-      }
-    }
-
-    // vision cones
-    for (const e of S.enemies) if (alive(e) && e.stun <= 0) drawCone(g, e, cx, cy);
-
-    // pickups
-    for (const p of S.pickups) if (!p.taken) Art.pickup(g, p.type, Math.round(p.x - cx), Math.round(p.y - cy), S.t);
-
-    // bodies
-    for (const e of S.enemies) {
-      if (e.type === 'drone' || e.type === 'camera') continue;
-      if (e.dead || e.ko > 0) Art.body(g, Math.round(e.x - cx), Math.round(e.y - cy), Art.PAL[e.type], e.type, e.dead ? e.deadT : S.t, e.dead);
-    }
-
-    // sorted actors
-    const actors = [];
-    for (const e of S.enemies) if (alive(e)) actors.push(e);
-    if (!P.hidden) actors.push(P);
-    actors.sort((a, b) => a.y - b.y);
-    for (const a of actors) {
-      const sx = Math.round(a.x - cx), sy = Math.round(a.y - cy);
-      if (a === P) {
-        if (P.inv > 0 && ((S.t * 30) | 0) % 2) continue;
-        let step = 0;
-        if (P.moving) step = [0, 1, 0, 2][(P.anim | 0) % 4];
-        Art.human(g, sx, sy, P.face, step, Art.PAL.snake, 'snake', { t: S.t, gun: P.shootT > 0 || P.fireCD > 0.1, aim: P.dir });
-        if (P.punchT > 0) {
-          const fx = Math.round(sx + Math.cos(P.dir) * 8), fy = Math.round(sy - 3 + Math.sin(P.dir) * 6);
-          g.fillStyle = '#b9c6d2'; g.fillRect(fx - 1, fy - 1, 3, 3); g.fillStyle = '#7ff6ff'; g.fillRect(fx, fy, 1, 1);
-        }
-        if (P.planting) { g.fillStyle = '#ff6af0'; g.fillRect(sx - 6, sy - 16, Math.round(12 * (1 - P.planting.t / 1.1)), 2); }
-      } else if (a.type === 'drone') {
-        Art.drone(g, sx, sy, a.dir, S.t, a.state === 'alert' ? '#ff3040' : a.state === 'patrol' || a.state === 'return' ? '#ffe066' : '#ff9a3c');
-      } else if (a.type === 'camera') {
-        Art.camera(g, sx, sy, a.dir, S.t, S.phase === 'alert' ? '#ff3040' : '#40ff70');
-      } else {
-        const step = a.walking ? [0, 1, 0, 2][(a.anim | 0) % 4] : 0;
-        Art.human(g, sx, sy, faceFromDir(a.dir), step, Art.PAL[a.type], a.type, { gun: a.state === 'alert', aim: a.dir });
-        if (a.stun > 0) {
-          for (let i = 0; i < 2; i++) { const an = S.t * 6 + i * Math.PI; g.fillStyle = '#fff'; g.fillRect(Math.round(sx + Math.cos(an) * 5), Math.round(sy - 13 + Math.sin(an) * 2), 1, 1); }
-        }
-      }
-    }
-
-    // hidden player tell
-    if (P.hidden) {
-      const sx = P.hidden.tx * TILE - cx, sy = P.hidden.ty * TILE - cy;
-      if (P.hidden.kind === 'BOX') {
-        if (((S.t * 2) | 0) % 5 === 0) { g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(sx + 1, sy + 2, 14, 1); }
-      } else if (((S.t * 1.5) | 0) % 4 !== 0) {
-        g.fillStyle = '#ff2a2a'; g.fillRect(sx + 5, sy + 5, 1, 1); g.fillStyle = '#e0e0e0'; g.fillRect(sx + 9, sy + 5, 1, 1);
-      }
-    }
-
-    // bullets
-    for (const b of S.bullets) {
-      const sx = Math.round(b.x - cx), sy = Math.round(b.y - cy);
-      if (b.owner === 'player') {
-        g.fillStyle = 'rgba(255,246,160,0.5)'; g.fillRect(Math.round(sx - b.vx * 0.012), Math.round(sy - b.vy * 0.012), 2, 2);
-        g.fillStyle = '#fff'; g.fillRect(sx, sy, 2, 2);
-      } else {
-        g.fillStyle = b.heavy ? 'rgba(255,80,80,0.5)' : 'rgba(210,90,255,0.5)'; g.fillRect(sx - 2, sy - 2, 5, 5);
-        g.fillStyle = b.heavy ? '#ffb0b0' : '#f0c8ff'; g.fillRect(sx - 1, sy - 1, 3, 3);
-      }
-    }
-    for (const p of S.particles) { g.fillStyle = p.color; g.fillRect(Math.round(p.x - cx), Math.round(p.y - cy), 1, 1); }
-
-    // icons over heads
-    for (const e of S.enemies) {
-      if (!e.icon || e.dead) continue;
-      const lift = e.type === 'camera' ? 6 : e.type === 'drone' ? 14 : 13;
-      Art.icon(g, e.icon, Math.round(e.x - cx), Math.round(e.y - cy - lift), e.icon === '!' ? '#ff3a3a' : '#ffd23a');
-    }
-    // awareness meters for partially-aware enemies
-    for (const e of S.enemies) {
-      if (!alive(e) || e.aw <= 0.05 || e.aw >= 1 || S.phase === 'alert') continue;
-      const sx = Math.round(e.x - cx), sy = Math.round(e.y - cy) - (e.type === 'camera' ? 9 : 18);
-      g.fillStyle = '#000'; g.fillRect(sx - 6, sy, 12, 3);
-      g.fillStyle = e.aw > 0.6 ? '#ff6a3a' : '#ffd23a'; g.fillRect(sx - 5, sy + 1, Math.round(10 * e.aw), 1);
-    }
-    // floaters
-    for (const f of S.floaters) {
-      g.globalAlpha = Math.min(1, f.life * 2);
-      Art.text(g, f.text, f.x - cx, f.y - cy - 5, f.color, '#05080c');
-    }
-    g.globalAlpha = 1;
-
-    // screen tints
-    if (S.phase === 'alert') { g.fillStyle = `rgba(255,0,0,${0.05 + pulse * 0.05})`; g.fillRect(0, 0, vw, vh); }
-    if (S.escape != null) { g.fillStyle = `rgba(255,40,120,${0.06 + pulse * 0.08})`; g.fillRect(0, 0, vw, vh); }
-    if (S.flash > 0) { g.fillStyle = `rgba(255,0,0,${S.flash})`; g.fillRect(0, 0, vw, vh); }
-    if (P.dead) { g.fillStyle = `rgba(120,0,0,${Math.min(0.6, (1.6 - S.overT) * 0.5)})`; g.fillRect(0, 0, vw, vh); }
   }
 
   // Marathon-style motion sensor (round scope)
@@ -1191,12 +1154,16 @@ const Game = (() => {
       g.fillRect(e.x - 3, e.y - 3, 6, 6);
     }
     for (const p of S.pickups) Art.pickup(g, p.type, p.x, p.y, 0);
+    for (const w of S.pows) { g.fillStyle = '#35e08a'; g.fillRect(w.x - 3, w.y - 3, 6, 6); }
     g.fillStyle = '#fff'; g.fillRect(S.player.x - 3, S.player.y - 3, 6, 6);
   }
 
   return {
-    load, update, render, renderRadar, renderMap,
+    load, update, renderRadar, renderMap,
     get state() { return S; },
     unload() { S = null; },
+    setViewYaw(a) { viewYaw = a; },
+    tileDef: def,
+    opaqueAt,
   };
 })();

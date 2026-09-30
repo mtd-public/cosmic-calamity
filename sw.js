@@ -1,6 +1,6 @@
 // Offline play once the game has loaded once (pattern from mtd-public/turn-tactics sw.js).
 // Bump VERSION whenever the shipped file list changes.
-const VERSION = 'metal-snake-v1';
+const VERSION = 'metal-snake-v2';
 const CORE = [
   './',
   './index.html',
@@ -8,11 +8,13 @@ const CORE = [
   './css/style.css',
   './touch-zoom-guard/touch-zoom-guard.css',
   './touch-zoom-guard/touch-zoom-guard.js',
+  './vendor/three.min.js',
   './js/audio.js',
   './js/input.js',
   './js/art.js',
   './js/levels.js',
   './js/game.js',
+  './js/render3d.js',
   './js/main.js',
   './icons/icon-192.png',
   './icons/icon-512.png',

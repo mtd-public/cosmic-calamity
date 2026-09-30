@@ -183,63 +183,39 @@ body.touch #prompt { bottom: auto; top: 26%; }
 }
 #toast.show { opacity: 1; }
 
-/* ---------------- Touch ---------------- */
-#touch { position: absolute; inset: 0; z-index: 8; pointer-events: none; }
-#stickZone {
+/* ---------------- Touch (dr-mow style: low-fi, unobtrusive) ---------------- */
+#touch { position: absolute; inset: 0; z-index: 8; touch-action: none; }
+#touchfx { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.hint {
   position: absolute;
-  left: 0; bottom: 0;
-  width: 50%;
-  height: 72%;
-  pointer-events: auto;
-  touch-action: none;
-}
-#stickBase {
-  position: absolute;
-  width: 120px; height: 120px;
-  margin: -60px 0 0 -60px;
+  display: grid;
+  place-items: center;
+  text-align: center;
   border-radius: 50%;
-  border: 2px solid rgba(154,166,180,0.45);
-  background: radial-gradient(circle, rgba(93,255,138,0.07), rgba(0,0,0,0.25));
-  left: 120px;
-  bottom: 60px;
+  border: 2px dashed rgba(255,253,248,0.28);
+  color: rgba(255,253,248,0.45);
+  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: 1px;
+  line-height: 1.1;
   pointer-events: none;
+  transition: background 0.12s;
 }
-#stickKnob {
-  position: absolute;
-  left: 50%; top: 50%;
-  width: 52px; height: 52px;
-  margin: -26px 0 0 -26px;
-  border-radius: 50%;
-  background: rgba(93,255,138,0.25);
-  border: 2px solid rgba(93,255,138,0.85);
-}
-#btns {
-  position: absolute;
-  right: max(18px, env(safe-area-inset-right));
-  bottom: max(28px, env(safe-area-inset-bottom));
-  width: 190px; height: 150px;
-  pointer-events: none;
-}
+.hint.act { width: 92px; height: 92px; right: max(22px, env(safe-area-inset-right)); bottom: max(26px, env(safe-area-inset-bottom)); }
+.hint.act.ctx { border-color: rgba(224,160,64,0.6); color: rgba(255,200,112,0.85); }
+.hint.fire { width: 58px; height: 58px; right: max(128px, calc(env(safe-area-inset-right) + 110px)); bottom: max(70px, calc(env(safe-area-inset-bottom) + 50px)); border-color: rgba(255,120,120,0.35); color: rgba(255,170,170,0.5); }
+.hint.on { background: rgba(255,253,248,0.14); }
+body.portrait .hint.act { bottom: max(90px, env(safe-area-inset-bottom)); }
+body.portrait .hint.fire { bottom: max(140px, calc(env(safe-area-inset-bottom) + 110px)); }
 .tbtn {
-  pointer-events: auto;
   font-family: var(--head);
   font-weight: 800;
   letter-spacing: 1px;
-  color: #fff;
-  border-radius: 50%;
-  border: 2px solid rgba(255,255,255,0.5);
-  background: rgba(12,14,17,0.5);
-  font-size: 13px;
   touch-action: none;
-  position: absolute;
   padding: 0;
   -webkit-user-select: none;
   user-select: none;
 }
-.tbtn.on { background: rgba(224,160,64,0.5); border-color: var(--amber-hi); }
-#btnAct { width: 88px; height: 88px; right: 0; bottom: 0; border-color: var(--amber); color: var(--amber-hi); }
-#btnAct.ctx { background: rgba(224,160,64,0.22); font-size: 10px; line-height: 1.1; }
-#btnFire { width: 70px; height: 70px; right: 104px; bottom: 44px; border-color: rgba(255,90,90,0.8); color: #ffb0b0; }
 .tbtn.pause {
   position: absolute;
   z-index: 9;
@@ -256,10 +232,6 @@ body.touch #prompt { bottom: auto; top: 26%; }
   cursor: pointer;
 }
 
-/* portrait phone: game view on top, controls underneath */
-body.portrait #stickZone { height: 42%; }
-body.portrait #stickBase { bottom: 110px; left: 90px; }
-body.portrait #btns { bottom: max(90px, env(safe-area-inset-bottom)); }
 body.portrait #prompt { top: auto; bottom: 46%; }
 
 /* ---------------- Screens ---------------- */

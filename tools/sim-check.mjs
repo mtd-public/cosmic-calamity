@@ -6,7 +6,7 @@ import { execSync } from 'node:child_process';
 import { join } from 'node:path';
 const pw = await import('playwright').catch(() => import(join(execSync('npm root -g').toString().trim(), 'playwright', 'index.mjs')));
 const base = process.env.BASE || 'http://localhost:4180/';
-const browser = await pw.chromium.launch({ executablePath: process.env.CHROMIUM || undefined });
+const browser = await pw.chromium.launch({ executablePath: process.env.CHROMIUM || undefined, args: ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'] });
 const page = await browser.newPage({ viewport: { width: 960, height: 540 } });
 const errors = [];
 page.on('pageerror', (e) => errors.push(String(e)));
@@ -164,10 +164,56 @@ r = await page.evaluate(() => {
 check('mothership: all cores armed starts escape', r.armed === 3 && r.total === 3 && r.escape > 0 && r.phase === 'alert', JSON.stringify(r));
 check('mothership: escape pod completes', r.done, JSON.stringify(r));
 
-// ---------------------------------------------------------------- 8. soak: every stage runs 60s of AI with no errors
-for (let i = 0; i < 5; i++) {
+// ---------------------------------------------------------------- 8. capture -> POW camp -> breakout -> rescue
+r = await page.evaluate(() => {
+  let captured = false;
+  GAME.start(0);
+  const S0 = T.S();
+  // lethal damage on a capturable stage leads to capture, not death
+  S0.player.hp = 1; S0.player.inv = 0;
+  S0.bullets.push({ x: S0.player.x, y: S0.player.y - 3, vx: 0, vy: 0, owner: 'enemy', dmg: 50, life: 1 });
+  GAME.ff(2);
+  captured = GAME.mode === 'card' && GAME.state.def.id === 'pow';
+  return { captured, mode: GAME.mode, id: GAME.state.def.id };
+});
+check('shield 0 on stages 1-4 -> captured to POW camp', r.captured, JSON.stringify(r));
+await page.evaluate(() => { document.getElementById('stagecard').dispatchEvent(new PointerEvent('pointerdown')); });
+await page.waitForTimeout(200);
+await page.evaluate(() => { document.getElementById('codecSkip').click(); });
+r = await page.evaluate(() => {
+  const S = T.S();
+  for (const o of S.enemies) o.stun = 999;
+  const P = S.player;
+  const cagedStart = P.caged, ammo0 = P.ammo;
+  // own cell door is straight below the start
+  T.place(9, 3, Math.PI / 2); GAME.ff(0.05); T.key('KeyJ'); GAME.ff(1.5);
+  const out = !P.caged && S.grid[4 * S.w + 9] === 'j';
+  // gear locker
+  T.place(36, 3, -Math.PI / 2); GAME.ff(0.05); T.key('KeyJ'); GAME.ff(0.2);
+  const gear = P.ammo > ammo0;
+  // free the prisoner in the first cell (door at 3,4), walk them out through the gate
+  T.place(3, 5, -Math.PI / 2); GAME.ff(0.05); T.key('KeyJ'); GAME.ff(1.5);
+  const following = S.pows.filter((w) => w.state === 'follow').length;
+  // lead them along a walkable route to the exit, a step at a time
+  const route = [[3, 6], [8, 6], [8, 9], [20, 9], [20, 18], [30, 18], [37, 22], [37, 23]];
+  for (const [tx, ty] of route) {
+    const tgt = T.tile(tx, ty);
+    for (let i = 0; i < 400 && Math.hypot(P.x - tgt.x, P.y - tgt.y) > 2; i++) {
+      const d = Math.hypot(tgt.x - P.x, tgt.y - P.y), st = Math.min(d, 1.5);
+      P.x += (tgt.x - P.x) / d * st; P.y += (tgt.y - P.y) / d * st; GAME.ff(1 / 60);
+      for (const o of S.enemies) o.stun = 999;
+    }
+  }
+  GAME.ff(0.5);
+  return { cagedStart, out, gear, following, done: S.done, rescued: S.stats.rescued && S.stats.rescued.length, phase: S.phase };
+});
+check('POW: start caged, pick lock, recover gear', r.cagedStart && r.out && r.gear, JSON.stringify(r));
+check('POW: freed prisoner follows and is rescued at the gate', r.following === 1 && r.done && r.rescued === 1, JSON.stringify(r));
+
+// ---------------------------------------------------------------- 9. soak: every stage runs 60s of AI with no errors
+for (const i of [0, 1, 2, 3, 4, 'pow']) {
   r = await page.evaluate((i) => { GAME.start(i); const S = T.S(); S.player.hp = 1e9; S.player.maxHp = 1e9; GAME.ff(60); return { phase: S.phase, enemies: S.enemies.length }; }, i);
-  check(`stage ${i + 1} 60s AI soak`, !errors.length, JSON.stringify(r));
+  check(`stage ${i} 60s AI soak`, !errors.length, JSON.stringify(r));
 }
 
 check('no page errors', errors.length === 0, errors.join(' | '));

@@ -32,66 +32,77 @@ const Input = (() => {
   });
   addEventListener('keyup', (e) => { const a = KEYMAP[e.code]; if (a) release(a); });
 
-  // ---------- touch (Pointer Events, per-pointerId; works with touch-zoom-guard) ----------
-  function setKnob(dx, dy) { const k = document.getElementById('stickKnob'); if (k) k.style.transform = `translate(${dx}px, ${dy}px)`; }
-  function resetStick() { stick.id = null; stick.x = stick.y = 0; stick.active = false; setKnob(0, 0); }
+  // ---------- touch: dr-mow "classic" scheme (Pointer Events, per-pointerId; works with touch-zoom-guard)
+  //   LEFT 55%: a floating thumbstick, drawn faintly only while a finger is down (see drawTouch).
+  //             Its direction is an absolute SCREEN direction; a light push = sneak.
+  //   RIGHT:    tap anywhere = ACT (fires on pointerdown, no latency); tap inside the faint FIRE ring = FIRE.
+  const R = 58;
+  let fireHeld = null, actHeld = null;
+  function resetStick() { stick.id = null; stick.x = stick.y = 0; stick.active = false; }
 
   function setupTouch() {
-    const zone = document.getElementById('stickZone');
-    const base = document.getElementById('stickBase');
-    const R = 46;
-
-    function placeBase(x, y) {
-      const r = zone.getBoundingClientRect();
-      base.style.left = (x - r.left) + 'px';
-      base.style.top = (y - r.top) + 'px';
-      base.style.bottom = 'auto';
-    }
-    // a new touch always takes the stick
-    zone.addEventListener('pointerdown', (e) => {
+    const el = document.getElementById('touch');
+    const fireEl = document.getElementById('hintFire');
+    const inFire = (x, y) => {
+      const r = fireEl.getBoundingClientRect();
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      return Math.hypot(x - cx, y - cy) < r.width * 0.75;
+    };
+    el.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       isTouch = true;
-      stick.id = e.pointerId; stick.ox = e.clientX; stick.oy = e.clientY; stick.active = true;
-      stick.x = stick.y = 0;
-      try { zone.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
-      placeBase(e.clientX, e.clientY);
-      setKnob(0, 0);
+      try { el.setPointerCapture(e.pointerId); } catch (err) { /* synthetic events throw */ }
+      if (e.clientX < window.innerWidth * 0.55) {
+        // a new touch always takes the stick
+        stick.id = e.pointerId; stick.ox = stick.tx = e.clientX; stick.oy = stick.ty = e.clientY; stick.active = true;
+        stick.x = stick.y = 0;
+        return;
+      }
+      if (inFire(e.clientX, e.clientY)) { fireHeld = e.pointerId; press('fire'); fireEl.classList.add('on'); }
+      else { actHeld = e.pointerId; press('act'); document.getElementById('hintAct').classList.add('on'); }
     });
-    zone.addEventListener('pointermove', (e) => {
+    el.addEventListener('pointermove', (e) => {
       if (e.pointerId !== stick.id) return;
       let dx = e.clientX - stick.ox, dy = e.clientY - stick.oy;
       const d = Math.hypot(dx, dy);
       if (d > R) { dx = dx / d * R; dy = dy / d * R; }
       stick.x = dx / R; stick.y = dy / R;
-      setKnob(dx, dy);
+      stick.tx = stick.ox + dx; stick.ty = stick.oy + dy;
     });
-    const end = (e) => { if (e.pointerId === stick.id) resetStick(); };
-    zone.addEventListener('pointerup', end);
-    zone.addEventListener('pointercancel', end);
-    zone.addEventListener('lostpointercapture', end);
-
-    const bind = (id, action) => {
-      const el = document.getElementById(id);
-      let pid = null;
-      el.addEventListener('pointerdown', (e) => {
-        e.preventDefault(); e.stopPropagation();
-        pid = e.pointerId;
-        try { el.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
-        el.classList.add('on'); press(action);
-      });
-      const up = (e) => { if (e.pointerId !== pid) return; pid = null; el.classList.remove('on'); release(action); };
-      el.addEventListener('pointerup', up);
-      el.addEventListener('pointercancel', up);
-      el.addEventListener('lostpointercapture', up);
+    const end = (e) => {
+      if (e.pointerId === stick.id) resetStick();
+      if (e.pointerId === fireHeld) { fireHeld = null; release('fire'); fireEl.classList.remove('on'); }
+      if (e.pointerId === actHeld) { actHeld = null; release('act'); document.getElementById('hintAct').classList.remove('on'); }
     };
-    bind('btnAct', 'act');
-    bind('btnFire', 'fire');
-    bind('btnPause', 'pause');
+    el.addEventListener('pointerup', end);
+    el.addEventListener('pointercancel', end);
+    el.addEventListener('lostpointercapture', end);
+    el.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    const pause = document.getElementById('btnPause');
+    pause.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); press('pause'); release('pause'); });
+  }
+
+  // faint, low-fi stick (dr-mow style): only visible while in use
+  function drawTouch(c) {
+    const g = c.getContext('2d');
+    if (c.width !== innerWidth || c.height !== innerHeight) { c.width = innerWidth; c.height = innerHeight; }
+    g.clearRect(0, 0, c.width, c.height);
+    if (!stick.active) return;
+    g.beginPath(); g.arc(stick.ox, stick.oy, R, 0, Math.PI * 2);
+    g.fillStyle = 'rgba(255,253,248,0.14)'; g.fill();
+    g.lineWidth = 3; g.strokeStyle = 'rgba(20,24,40,0.45)'; g.stroke();
+    if (Math.hypot(stick.x, stick.y) > 0.15) {
+      g.beginPath(); g.moveTo(stick.ox, stick.oy); g.lineTo(stick.tx, stick.ty);
+      g.lineWidth = 3; g.strokeStyle = 'rgba(255,253,248,0.3)'; g.stroke();
+    }
+    g.beginPath(); g.arc(stick.tx, stick.ty, 24, 0, Math.PI * 2);
+    g.fillStyle = 'rgba(255,253,248,0.7)'; g.fill(); g.lineWidth = 3; g.strokeStyle = 'rgba(20,24,40,0.8)'; g.stroke();
   }
 
   function reset() {
-    held.clear(); pressed.clear(); resetStick();
-    document.querySelectorAll('.tbtn.on').forEach((b) => b.classList.remove('on'));
+    held.clear(); pressed.clear(); resetStick(); fireHeld = actHeld = null;
+    document.querySelectorAll('.hint.on').forEach((b) => b.classList.remove('on'));
   }
   addEventListener('blur', reset);
   addEventListener('pagehide', reset);
@@ -145,6 +156,7 @@ const Input = (() => {
 
   return {
     setupTouch,
+    drawTouch,
     pollPad,
     axis,
     down: (a) => held.has(a),

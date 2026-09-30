@@ -11,7 +11,7 @@ const OUT = process.env.OUT || 'shots';
 mkdirSync(OUT, { recursive: true });
 const base = process.env.BASE || 'http://localhost:4180/';
 const level = Number(process.env.LEVEL || 0);
-const browser = await chromium.launch({ executablePath: process.env.CHROMIUM || undefined });
+const browser = await chromium.launch({ executablePath: process.env.CHROMIUM || undefined, args: ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'] });
 let failures = 0;
 
 async function run(name, ctxOpts, act) {
@@ -84,8 +84,12 @@ const touchPlay = async (page, name) => {
   await page.waitForTimeout(500);
   await page.screenshot({ path: `${OUT}/${name}-stick.png` });
   await tp('touchEnd', 0, 0);
-  await page.tap('#btnFire');
-  await page.tap('#btnAct');
+  // right side: tap inside the faint FIRE ring = fire, anywhere else = act
+  const fire = await page.locator('#hintFire').boundingBox();
+  await page.touchscreen.tap(fire.x + fire.width / 2, fire.y + fire.height / 2);
+  await page.touchscreen.tap(vp.width * 0.8, vp.height * 0.45);
+  const moved = await page.evaluate(() => ({ shots: GAME.state.stats.shots }));
+  if (!moved.shots) { console.log(name, 'FIRE tap did not fire'); failures++; }
   await page.waitForTimeout(400);
   await page.tap('#btnPause');
   await page.waitForTimeout(300);

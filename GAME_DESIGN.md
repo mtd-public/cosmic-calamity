@@ -1,11 +1,13 @@
 # Metal Snake: Cosmic Calamity — Game Design Document
 
-> *Metal Gear* (16-bit top-down stealth) but the occupiers are "V"-style reptilian aliens under a fragile truce, dressed in *Marathon*'s AI-and-alien sci-fi.
+> *Metal Gear* stealth, played in retro-pixel 3D isometric with anime characters. The occupiers are "V"-style reptilian aliens under a fragile truce, and the UI is dressed in *Marathon*'s AI-and-alien sci-fi.
 
 Play: https://mtd-public.github.io/cosmic-calamity/ · Built from: `mstr-gme-dsgn-tmpt` house rules plus kits `touch-zoom-guard` and the 3x5 font. Shell and deploy patterns come from turn-tactics and dr-mow.
 
 ## 1. Pillars
-1. **Seen = consequences, not death.** Being spotted starts an Alert you can escape by breaking line of sight and hiding. Every mistake can be recovered.
+1. **Seen = consequences, not death.**
+   - Being spotted starts an Alert you can escape by breaking line of sight and hiding.
+   - Even losing all your shield means capture and a POW-camp breakout, not a game over (stages 1–4).
 2. **Readable threat.** Vision cones are always drawn, a meter fills before `!`, and cone colours encode state: yellow calm, orange suspicious, red alert.
 3. **Many tools, one button.** ACT is context-sensitive (takedown / punch / hide / open / download / plant / knock), and the prompt tells you which.
 4. **Marathon mood.** Steel terminals, a round motion sensor, AIs with their own agenda.
@@ -22,7 +24,7 @@ Play: https://mtd-public.github.io/cosmic-calamity/ · Built from: `mstr-gme-dsg
 ## 3. Controls
 | Input | Action |
 |---|---|
-| Touch: floating left stick (light push = sneak), ACT and FIRE on the right, pause top-right | move / act / fire |
+| Touch (dr-mow classic): drag on the left half for a faint floating stick (light push = sneak), tap the right half to act, tap the faint FIRE ring to shoot, pause top-right | move / act / fire |
 | Keyboard: WASD/arrows, Shift sneak, J/Space/E act, K/F fire, Esc/P pause, M mute, ? help | |
 | Gamepad: stick/d-pad, A act, X/RB fire, Start pause | |
 
@@ -54,6 +56,7 @@ Difficulty rises with the stage: more enemy types, cameras, then drones plus hea
 | Scout drone | wall-following sweep, calls alerts | beeps, eye colour | shoot, grass, timing |
 | Camera | fixed sweep, instant alarm on full meter | blue cone, LED | avoid the beam or shoot it (1 hit) |
 | Ration / ammo / keycard | pickups | bob animation, keycard on the sensor | — |
+| Prisoner (human / hybrid / AI) | caged until freed, then walks the player's trail | orange jumpsuit, green x-ray | a guard who sees one raises the alarm |
 
 ## 6. HUD
 - **Top-left bezel:** SHIELD bar (pulses at ≤30%), rail-pistol ammo (tabular numerals), keycard chip, objective.
@@ -63,7 +66,15 @@ Difficulty rises with the stage: more enemy types, cameras, then drones plus hea
 - **Context prompt:** bottom-centre on desktop; on touch it is the ACT button label.
 
 ## 7. Art direction
-Procedural 16-bit pixel art with a low internal resolution (about 216 px tall) and integer scaling. Themes:
+**3D isometric** (orthographic, azimuth 45°, elevation atan(1/√2)). Movement is screen-relative.
+- **Models:** procedural low-poly, with chibi anime proportions (big heads).
+- **Shading:** the **turn-tactics classic** anime look: a 3-band toon ramp, ink outlines (inverted hull), pastel colours with emissive accents, and a hemi + warm key + blue rim + violet fill rig.
+- **Pixel feel:** the scene renders at about 230 lines and is upscaled with nearest filtering, then quantised to 15-bit colour with a 4×4 Bayer dither.
+- **Surfaces:** walls, crates and floors use 16 px pixel-art textures.
+- **Occlusion:** characters hidden behind walls show as flat x-ray silhouettes (cyan = you, red = hostile, green = prisoner).
+- **Portraits:** anime faces drawn in vector at 160 px, then pixelated to 64 px.
+
+Themes:
 - **Depot:** night concrete and corrugated steel.
 - **Camp:** dirt, grass, maroon tents.
 - **Annex:** Marathon steel-blue with amber light strips.
@@ -88,13 +99,15 @@ Type: **Oxanium** for headings and HUD, **VT323** for terminal text, a 3x5 bitma
 | 3 | Research Annex | camera-dense rooms, glass | keycard → intel → shuttle lift |
 | 4 | Orbital Hangar | open ground, everything mixed | control keycard → shuttle |
 | 5 | Mothership | 3 cores → alarm + detonation timer | plant charges → escape pod |
+| — | Detention Camp 9 (on capture, stages 1–4) | no gear, caged prisoners who follow you | pick lock → gear → free prisoners → gate |
 
 ## 9. Juice
 Screen shake on takedowns, hits and charges. A red hit flash with an invincibility blink. Particles for muzzle flash, sparks, goo and explosions. `!` alert sting, alert music and red tint. A typewriter terminal with a voice-waveform mouth.
 
 ## 10. Performance budget
-- Canvas 2D at an internal resolution of about 384×216.
-- One pre-rendered level background.
+- WebGL at about 230 internal lines.
+- Level blocks are instanced, one draw call per part type.
+- Floors are a single textured plane.
 - About 20 rays per cone for 20 or fewer enemies.
 - BFS paths are re-planned at most once per 1.2 s per enemy.
 - DPR ≤ 2.
@@ -106,6 +119,9 @@ Screen shake on takedowns, hits and charges. A red hit flash with an invincibili
 | 3x5 font glyphs | mstr-gme-dsgn-tmpt/kits/vanilla-js/util | copied into `art.js` |
 | `tools/smoke.mjs` | dr-mow/tools | adapted |
 | `sw.js`, manifest, `pages.yml` | turn-tactics | adapted |
+| `vendor/three.min.js` (r128) | turn-tactics | copied verbatim |
+| Toon + outline materials, light rig, anime portrait technique | turn-tactics (classic mode) | re-implemented |
+| Touch scheme (floating stick, tap-to-act) | dr-mow `js/input.js` | re-implemented |
 
 ## 12. Open questions
 - Should players be able to drag bodies into lockers? Default chosen: no. Bodies wake up after 50 s instead.
@@ -121,4 +137,21 @@ Screen shake on takedowns, hits and charges. A red hit flash with an invincibili
   - `check-levels` OK.
   - `sim-check`: 17/17 PASS.
   - `smoke`: desktop, iPhone 13, iPhone 13 landscape and iPad Pro 11 all PASS with 0 errors and 0 scroll.
+  - tap-spam: PASS on iPhone and iPad.
+
+### 3D isometric + POW camp
+- **Renderer:** 2D top-down canvas → three.js isometric (`js/render3d.js`) in turn-tactics' classic anime style, pixelated and dithered.
+  - The sim is unchanged apart from rotating input into screen space.
+  - It also gained a `tileVersion` counter so the renderer can rebuild when doors open.
+- **Touch:** the ACT/FIRE buttons and fixed stick became dr-mow's invisible surface.
+  - A floating stick is drawn only while in use.
+  - Tap to act; faint dashed ACT/FIRE hints show where.
+- **Capture:** shield 0 on stages 1–4 now captures you instead of ending the run.
+  - You break out of the POW camp, optionally rescuing up to 6 prisoners (+2 ammo each on retry), then retry the stage.
+  - The ending tallies survivors; rescuing all 6 adds LIBERATOR.
+- **Portraits:** now anime (turn-tactics classic style).
+- **Verification:**
+  - `check-levels` OK (6 maps).
+  - `sim-check`: 21/21 PASS, including capture → breakout → rescue.
+  - `smoke`: 4 profiles PASS with 0 errors and 0 scroll; touch fire and act verified.
   - tap-spam: PASS on iPhone and iPad.

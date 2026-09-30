@@ -10,17 +10,20 @@
   L  locker (hide)   B  bin (hide)    O  cardboard box (hide)
   D  locked door (keycard)            E  exit            Z  weapon core (objective)
   I  intel terminal (objective)
+  J  cell door (pick the lock with ACT)  G  confiscated-gear locker
   Entities (replaced by the level's floor tile):
   P  player start
   ^ v < >  trooper patrolling along that axis
   g  trooper sentry (looks around)   H  heavy sentry   o  scout drone
   c  security camera (must touch a wall)
   r  ration   a  ammo   K  keycard
+  h / y / u  prisoner: human / human-AI hybrid / AI (POW camp)
 */
 const LEVELS = [
   // ------------------------------------------------------------------ 1
   {
     id: 'depot',
+    capturable: true,
     name: 'TRUCE DEPOT 7',
     loc: 'NEVADA CO-OCCUPATION ZONE // 02:14 LOCAL',
     theme: 'depot',
@@ -79,6 +82,7 @@ const LEVELS = [
   // ------------------------------------------------------------------ 2
   {
     id: 'camp',
+    capturable: true,
     name: 'CAMP SERPENS',
     loc: 'VYRR FIELD GARRISON // MOJAVE EXCLUSION LINE',
     theme: 'camp',
@@ -129,6 +133,7 @@ const LEVELS = [
   // ------------------------------------------------------------------ 3
   {
     id: 'lab',
+    capturable: true,
     name: 'RESEARCH ANNEX',
     loc: 'JOINT AGRICULTURAL SCIENCE FACILITY // SUBLEVEL 2',
     theme: 'lab',
@@ -189,6 +194,7 @@ const LEVELS = [
   // ------------------------------------------------------------------ 4
   {
     id: 'hangar',
+    capturable: true,
     name: 'ORBITAL HANGAR',
     loc: 'VYRR SHUTTLE PORT // GROOM LAKE ACCORD SITE',
     theme: 'hangar',
@@ -301,6 +307,57 @@ const LEVELS = [
     ],
   },
 ];
+
+// Where you wake up if the Vyrr capture you on stages 1-4. Break out, then retry the stage.
+const POW_CAMP = {
+  id: 'pow',
+  name: 'DETENTION CAMP 9',
+  loc: 'VYRR "RE-EDUCATION" FACILITY // LOCATION UNKNOWN',
+  theme: 'pow',
+  music: 'sneak',
+  floor: '.',
+  isPow: true,
+  startAmmo: 0,
+  objective: 'PICK YOUR CELL LOCK. RECOVER YOUR GEAR. FREE WHO YOU CAN. ESCAPE THROUGH THE GATE.',
+  map: [
+    '########################################',
+    '#.....#.....#.....#.....#.....#........#',
+    '#..h..#..P..#..y..#..u..#..h..#.LL..G..#',
+    '#.....#.....#.....#.....#.....#........#',
+    '###J#####J#####J#####J#####J###........#',
+    '#c.....................................#',
+    '#..........>...........................#',
+    '#......................................#',
+    '#####......#############......##########',
+    '#......................................#',
+    '#..XX......;;;;;.........g........XX...#',
+    '#..XX......;;;;;..................XX...#',
+    '#.................o....................#',
+    '#..........................B...........#',
+    '#######J#####J#####;;;;;;..............#',
+    '#####..h..#..y..###.......T............#',
+    '#####.....#.....###....................#',
+    '###################....X...............#',
+    '#..................................X...#',
+    '#...;;;;;.............<................#',
+    '#...;;;;;.......XX.....................#',
+    '#...............XX..........H..........#',
+    '#..B...................................#',
+    '#.r...............................a..E.#',
+    '########################################',
+  ],
+  briefing: [
+    ['iris', 'Snake... Snake, respond. Neural link restored. You were unconscious for six hours.'],
+    ['iris', 'They stripped your gear and locked you in a Vyrr detention camp. I am still in your head. They did not think to look there.'],
+    ['hale', 'Snake, listen. This camp is where the Accord\'s "missing" end up. Humans. Human-AI hybrids. Even AIs, pulled out of their hardware and caged in drone frames.'],
+    ['hale', 'Get yourself out. If you can bring any of them with you, do it. Every one is a witness.'],
+    ['iris', 'Pick your cell lock with ACT. Freed prisoners will follow in your footsteps, and a guard who sees them will raise the alarm. Your gear should be in the guard room, north-east.'],
+  ],
+  escaped: [
+    ['iris', 'We are clear of the camp. The resistance is extracting the survivors now.'],
+    ['hale', 'Good work, Snake. Now get back in there and finish the job. And try not to get caught this time.'],
+  ],
+};
 
 const ENDING = [
   ['hale', 'Snake! The mothership just lit up like a second sun. The Lullaby Array is gone. The other Vyrr ships are pulling back to high orbit.'],

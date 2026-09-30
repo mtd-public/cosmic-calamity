@@ -3,7 +3,9 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const canvas = $('game');
-  const ctx = canvas.getContext('2d');
+  const params0 = new URLSearchParams(location.search);
+  const mapMode = params0.has('map');
+  if (!mapMode) Render3D.init(canvas);
   const radar = $('radar');
   const SAVE_KEY = 'cosmic-calamity.progress';
   const STEP = 1 / 60;
@@ -34,17 +36,8 @@
   function resize() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const W = window.innerWidth, H = window.innerHeight;
-    const portrait = Input.isTouch && H > W;
-    document.body.classList.toggle('portrait', portrait);
-    const areaH = portrait ? Math.round(H * 0.6) : H;
-    const target = portrait ? 200 : 216;
-    const scale = Math.max(1, Math.round(Math.min(W, areaH) * dpr / target));
-    view.w = Math.ceil(W * dpr / scale);
-    view.h = Math.ceil(areaH * dpr / scale);
-    canvas.width = view.w; canvas.height = view.h;
-    canvas.style.width = (view.w * scale / dpr) + 'px';
-    canvas.style.height = (view.h * scale / dpr) + 'px';
-    ctx.imageSmoothingEnabled = false;
+    document.body.classList.toggle('portrait', Input.isTouch && H > W);
+    if (!mapMode) Render3D.resize(W, H, dpr);
     sizeStars();
   }
   addEventListener('resize', resize);
@@ -122,7 +115,7 @@
       sound: toggleSound,
       back,
       resume,
-      restart: () => startStage(stageIndex, true),
+      restart: () => (powActive ? startPow() : startStage(stageIndex, true)),
       quit: toTitle,
       retry: () => { run.continues++; startStage(stageIndex, true); },
       next: nextStage,
@@ -164,7 +157,7 @@
 
   // ------------------------------------------------------------------ flow
   function newGame(i) {
-    run = { time: 0, alerts: 0, kills: 0, takedowns: 0, continues: 0 };
+    run = { time: 0, alerts: 0, kills: 0, takedowns: 0, continues: 0, captures: 0, rescued: [] };
     try { if (Input.isTouch && window.TouchZoomGuard) TouchZoomGuard.enterFullscreen('landscape'); } catch (e) { /* ignore */ }
     startStage(i, false);
   }
@@ -174,12 +167,34 @@
     codec: (lines) => { if (mode === 'play') openCodec(lines, () => { setMode('play'); Input.flush(); }); },
     complete: (stats) => setTimeout(() => stageClear(stats), 900),
     gameover: (reason) => { $('goReason').textContent = reason; setMode('gameover'); },
+    captured: () => { run.captures++; startPow(); },
   };
+
+  // ------------------------------------------------------------------ capture -> POW camp -> retry the stage
+  let powActive = false, bonusAmmo = 0;
+  const powTotal = POW_CAMP.map.join('').replace(/[^hyu]/g, '').length;
+  function startPow() {
+    powActive = true;
+    Game.load(POW_CAMP, hooks);
+    $('stageNum').textContent = 'CAPTURED';
+    $('stageName').textContent = POW_CAMP.name;
+    $('stageLoc').textContent = POW_CAMP.loc;
+    $('objective').textContent = POW_CAMP.objective;
+    $('pauseObj').textContent = POW_CAMP.objective;
+    setMode('card', 'stagecard');
+    Sound.stopMusic();
+    Sound.sfx.gameover();
+    cardNext = () => openCodec(POW_CAMP.briefing, beginPlay);
+    clearTimeout(cardTimer);
+    cardTimer = setTimeout(cardDone, 2600);
+  }
 
   let cardTimer = null, cardNext = null;
   function startStage(i, retry) {
     stageIndex = i;
+    powActive = false;
     Game.load(i, hooks);
+    if (bonusAmmo) { Game.state.player.ammo = Math.min(30, Game.state.player.ammo + bonusAmmo); bonusAmmo = 0; }
     const L = LEVELS[i];
     $('stageNum').textContent = `STAGE ${i + 1} / ${LEVELS.length}`;
     $('stageName').textContent = L.name;
@@ -201,7 +216,7 @@
   function beginPlay() {
     setMode('play');
     Input.flush();
-    Sound.playMusic(LEVELS[stageIndex].music);
+    Sound.playMusic(Game.state ? Game.state.def.music : 'sneak');
     if (stageIndex === 0) setTimeout(() => mode === 'play' && toast(Input.isTouch ? 'STICK: MOVE   ACT: TAKEDOWN / HIDE' : 'WASD: MOVE   J: TAKEDOWN / HIDE   K: FIRE'), 500);
   }
 
@@ -224,6 +239,19 @@
 
   function stageClear(stats) {
     if (mode !== 'play') return;
+    if (powActive) {
+      const fresh = (stats.rescued || []).filter((id) => !run.rescued.includes(id));
+      run.rescued.push(...fresh);
+      bonusAmmo = stats.rescued.length * 2;
+      $('clearStats').innerHTML = [['TIME', fmtTime(stats.time)], ['ALERTS', stats.alerts], ['SURVIVORS OUT', `${stats.rescued.length} / ${stats.prisoners}`], ['BONUS AMMO', '+' + bonusAmmo]]
+        .map(([a, b]) => `<tr><td>${a}</td><td>${b}</td></tr>`).join('');
+      $('clearRank').textContent = stats.rescued.length >= stats.prisoners ? 'LIBERATOR' : stats.rescued.length ? 'SHEPHERD' : 'LONE WOLF';
+      document.querySelector('#clear h2').textContent = 'ESCAPED';
+      setMode('clear');
+      Sound.playMusic('title');
+      return;
+    }
+    document.querySelector('#clear h2').textContent = 'STAGE CLEAR';
     run.time += stats.time; run.alerts += stats.alerts; run.kills += stats.kills; run.takedowns += stats.takedowns;
     save.unlocked = Math.max(save.unlocked, Math.min(LEVELS.length - 1, stageIndex + 1));
     writeSave(save);
@@ -233,7 +261,10 @@
     setMode('clear');
     Sound.playMusic('title');
   }
-  function nextStage() { startStage(stageIndex + 1, false); }
+  function nextStage() {
+    if (powActive) { powActive = false; openCodec(POW_CAMP.escaped, () => startStage(stageIndex, true)); return; }
+    startStage(stageIndex + 1, false);
+  }
 
   function ending() {
     Game.unload();
@@ -241,8 +272,8 @@
     mode = 'codec';
     Sound.playMusic('title');
     openCodec(ENDING, () => {
-      $('endStats').innerHTML = statRows(run) + `<tr><td>CONTINUES</td><td>${run.continues}</td></tr>`;
-      $('endRank').textContent = rankFor(run, run.continues);
+      $('endStats').innerHTML = statRows(run) + `<tr><td>TIMES CAPTURED</td><td>${run.captures}</td></tr><tr><td>SURVIVORS RESCUED</td><td>${run.rescued.length} / ${powTotal}</td></tr><tr><td>CONTINUES</td><td>${run.continues}</td></tr>`;
+      $('endRank').textContent = rankFor(run, run.continues) + (run.rescued.length >= powTotal ? ' \u2605 LIBERATOR' : '');
       setMode('ending');
     });
   }
@@ -322,6 +353,10 @@
     let obj = S.def.objective;
     if (S.def.requires === 'cores') obj = S.cores < S.coresTotal ? `CORES ARMED ${S.cores}/${S.coresTotal}` : 'REACH AN ESCAPE POD!';
     else if (S.def.requires === 'intel' && S.intel) obj = 'INTEL ACQUIRED. REACH THE SHUTTLE LIFT.';
+    else if (S.def.isPow) {
+      const freed = S.pows.filter((w) => w.state === 'follow').length;
+      obj = S.player.caged ? 'PICK YOUR CELL LOCK (ACT).' : (S.player.ammo === 0 ? 'RECOVER YOUR GEAR (GUARD ROOM, NORTH-EAST).' : 'ESCAPE THROUGH THE GATE (SOUTH-EAST).') + ` FREED ${freed}/${S.pows.length}`;
+    }
     setText('objective', obj);
     const ph = $('phase');
     let name = '', time = '', cls = '';
@@ -335,8 +370,8 @@
       hudCache.prompt = pr;
       $('prompt').classList.toggle('hidden', !pr || Input.isTouch);
       $('prompt').textContent = pr ? (Input.isTouch ? pr : 'ACT: ' + pr) : '';
-      const act = $('btnAct');
-      act.textContent = pr ? pr.split(' ')[0] : 'ACT';
+      const act = $('hintAct');
+      act.textContent = pr ? pr.split(' ').slice(0, 2).join('\n').replace(' IN', '') : 'ACT';
       act.classList.toggle('ctx', !!pr);
     }
   }
@@ -396,10 +431,11 @@
     } else acc = 0;
     updateCodec(dt);
 
-    if (Game.state && (mode === 'play' || mode === 'pause' || mode === 'gameover' || mode === 'clear' || mode === 'card')) {
-      Game.render(ctx, view.w, view.h);
+    if (Game.state && (mode === 'play' || mode === 'pause' || mode === 'gameover' || mode === 'clear')) {
+      Render3D.render(Game.state, dt);
       if (mode === 'play' || mode === 'pause') { Game.renderRadar(radar); updateHud(); }
-    } else { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, view.w, view.h); }
+    } else if (mode === 'play' || mode === 'card') Render3D.render(null, dt);
+    if (mode === 'play' && Input.isTouch) Input.drawTouch($('touchfx'));
     const t = now / 1000;
     if (mode === 'title' || mode === 'select' || (mode === 'help' && helpReturn === 'title')) drawAttract(starCanvases[0], t, 0);
     if (mode === 'ending') { endT += dt; drawAttract(starCanvases[1], t, endT * 0.6); }
@@ -419,7 +455,11 @@
 
   // debug / tooling hooks (used by tools/smoke.mjs)
   window.GAME = {
-    start(i = 0) { Sound.init(); run = { time: 0, alerts: 0, kills: 0, takedowns: 0, continues: 0 }; stageIndex = i; Game.load(i, hooks); $('objective').textContent = LEVELS[i].objective; beginPlay(); },
+    start(i = 0) {
+      Sound.init(); run = { time: 0, alerts: 0, kills: 0, takedowns: 0, continues: 0, captures: 0, rescued: [] };
+      if (i === 'pow') { powActive = true; Game.load(POW_CAMP, hooks); } else { powActive = false; stageIndex = i; Game.load(i, hooks); }
+      $('objective').textContent = Game.state.def.objective; beginPlay();
+    },
     ff(sec) { for (let i = 0; i < sec * 60; i++) Game.update(STEP); },
     get mode() { return mode; },
     get state() { return Game.state; },
@@ -428,14 +468,17 @@
 
   if (params.has('map')) {
     // full-level preview: ?map=0..4
-    const i = Math.min(LEVELS.length - 1, Number(params.get('map')) || 0);
+    const i = params.get('map') === 'pow' ? POW_CAMP : Math.min(LEVELS.length - 1, Number(params.get('map')) || 0);
     Game.load(i, hooks);
     const S = Game.state;
-    canvas.width = S.w * 16; canvas.height = S.h * 16;
-    canvas.style.width = canvas.width * 2 + 'px'; canvas.style.height = canvas.height * 2 + 'px';
+    const mc = document.createElement('canvas');
+    mc.id = 'mapview';
+    mc.width = S.w * 16; mc.height = S.h * 16;
+    mc.style.cssText = `position:absolute;left:0;top:0;z-index:50;image-rendering:pixelated;width:${mc.width * 2}px;height:${mc.height * 2}px`;
+    canvas.replaceWith(mc);
     SCREENS.forEach((s) => $(s).classList.add('hidden'));
     $('scan').classList.add('hidden');
-    Game.renderMap(ctx);
+    Game.renderMap(mc.getContext('2d'));
     document.body.style.overflow = 'auto';
     return;
   }

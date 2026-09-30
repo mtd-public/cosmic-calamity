@@ -6,10 +6,10 @@ import vm from 'node:vm';
 
 const src = fs.readFileSync(new URL('../js/levels.js', import.meta.url), 'utf8');
 const ctx = {};
-vm.runInNewContext(src + '\nthis.LEVELS = LEVELS;', ctx);
+vm.runInNewContext(src + '\nthis.LEVELS = LEVELS.concat([POW_CAMP]);', ctx);
 
-const SOLID = new Set('#XxTALBOC=DZI'.split(''));
-const ENT = new Set('P^v<>gHocraK'.split(''));
+const SOLID = new Set('#XxTALBOC=DZIGk'.split(''));
+const ENT = new Set('P^v<>gHocraKhyu'.split(''));
 let failures = 0;
 const fail = (lvl, msg) => { failures++; console.log(`  FAIL [${lvl}] ${msg}`); };
 
@@ -27,7 +27,8 @@ for (const L of ctx.LEVELS) {
     const c = at(x, y);
     if (c === 'P') start = [x, y];
     if ('raKE'.includes(c)) need.push([c, x, y, false]);
-    if ('ZI'.includes(c)) need.push([c, x, y, true]);
+    if ('ZIG'.includes(c)) need.push([c, x, y, true]);
+    if ('hyu'.includes(c)) need.push([c, x, y, false]);
     if (c === 'c') {
       const walls = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => at(x + dx, y + dy) === '#').length;
       if (!walls) fail(L.id, `camera at ${x},${y} is not touching a wall`);

@@ -26,7 +26,7 @@ jobs:
         run: |
           mkdir -p _site
           cp index.html .nojekyll manifest.webmanifest sw.js _site/
-          cp -r css js icons touch-zoom-guard _site/
+          cp -r css js icons vendor touch-zoom-guard _site/
           rm -rf _site/touch-zoom-guard/test
       # Works when Settings -> Pages -> Source is "Deploy from a branch" (gh-pages)
       - name: Publish to the gh-pages branch

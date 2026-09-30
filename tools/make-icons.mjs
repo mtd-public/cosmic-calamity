@@ -13,7 +13,7 @@ mkdirSync(new URL('../icons/', import.meta.url), { recursive: true });
 const icons = { 'icon-192.png': [192, false], 'icon-512.png': [512, false], 'icon-maskable-512.png': [512, true], 'apple-touch-icon.png': [180, true] };
 for (const [name, [size, maskable]] of Object.entries(icons)) {
   const data = await page.evaluate(([size, maskable]) => {
-    const src = document.createElement('canvas'); src.width = src.height = 48;
+    const src = document.createElement('canvas'); src.width = src.height = 64;
     Art.portrait(src, 'snake', false, false, 0.1);
     const c = document.createElement('canvas'); c.width = c.height = size;
     const g = c.getContext('2d');

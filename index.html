@@ -41,13 +41,11 @@
   <div id="prompt" class="hidden"></div>
   <div id="toast"></div>
 
-  <!-- Touch controls -->
-  <div id="touch" class="hidden">
-    <div id="stickZone" data-touch-control><div id="stickBase"><div id="stickKnob"></div></div></div>
-    <div id="btns">
-      <button id="btnFire" class="tbtn" aria-label="Fire">FIRE</button>
-      <button id="btnAct" class="tbtn" aria-label="Action">ACT</button>
-    </div>
+  <!-- Touch controls (dr-mow style): invisible surface, faint stick drawn only while used -->
+  <div id="touch" class="hidden" data-touch-control>
+    <canvas id="touchfx"></canvas>
+    <div class="hint act" id="hintAct">ACT</div>
+    <div class="hint fire" id="hintFire">FIRE</div>
   </div>
   <button id="btnPause" class="tbtn pause hidden" aria-label="Pause">&#10074;&#10074;</button>
 
@@ -96,7 +94,7 @@
             <tr><td>HELP</td><td>?</td></tr>
           </table>
           <h3>TOUCH</h3>
-          <p>LEFT THUMB: STICK (PUSH LIGHTLY TO SNEAK). RIGHT THUMB: ACT / FIRE.</p>
+          <p>LEFT HALF: DRAG ANYWHERE FOR A FLOATING STICK (PUSH LIGHTLY TO SNEAK). RIGHT HALF: TAP TO ACT, TAP THE FIRE RING TO SHOOT.</p>
           <h3>GAMEPAD</h3>
           <p>STICK / D-PAD MOVE &middot; A ACT &middot; X / RB FIRE &middot; START PAUSE</p>
         </div>
@@ -108,6 +106,7 @@
           <p>ACT AGAINST A WALL: KNOCK TO LURE A GUARD.</p>
           <p>A ROUND INTO AN UNAWARE BACK DROPS A TROOPER. GUNFIRE CARRIES.</p>
           <p>TALL GRASS HIDES YOU UNLESS THEY ARE CLOSE. ALERTS JAM THE MOTION SENSOR.</p>
+          <p>IF YOUR SHIELD FAILS YOU ARE CAPTURED: BREAK OUT OF THE POW CAMP AND FREE THE PRISONERS FOR A BONUS.</p>
         </div>
       </div>
       <div class="menu"><button class="btn" data-action="back">BACK</button></div>
@@ -127,7 +126,7 @@
       <div class="term-bar"><span>UEDF SECURE TERMINAL</span><span id="termChan">CH 141.12</span></div>
       <div class="term-body">
         <div class="term-pic">
-          <canvas id="portR" width="48" height="48"></canvas>
+          <canvas id="portR" width="64" height="64"></canvas>
           <div class="pname" id="nameR">COL. HALE</div>
           <div class="freq-bars" id="freqBars"></div>
         </div>
@@ -195,11 +194,13 @@
   <div class="tzg-hint">PINCH OUT TO RESET ZOOM</div>
 </div>
 
+<script src="vendor/three.min.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/input.js"></script>
 <script src="js/art.js"></script>
 <script src="js/levels.js"></script>
 <script src="js/game.js"></script>
+<script src="js/render3d.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>
