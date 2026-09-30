@@ -1,0 +1,21 @@
+/* touch-zoom-guard.css - pair with touch-zoom-guard.js */
+html, body {
+  touch-action: none;                 /* no browser pan/zoom gestures on the game */
+  overscroll-behavior: none;          /* no pull-to-refresh / rubber-band */
+  -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none;        /* no iOS long-press callout */
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%; text-size-adjust: 100%;
+}
+body { position: fixed; inset: 0; overflow: hidden; }  /* pin the page on iOS */
+
+/* touch-action is NOT inherited: give every control (canvas, joystick, buttons) its own */
+canvas, button, [data-touch-control] { touch-action: none; }
+
+/* Menus / dialogs that need to scroll or take normal taps */
+[data-touch-allow] { touch-action: pan-y; overscroll-behavior: contain; }
+[data-touch-allow] button, [data-touch-allow] a, [data-touch-allow] input { touch-action: manipulation; }
+
+/* Shown while a zoom slipped through (class set on <html> by the script) */
+.tzg-hint { display: none; }
+.tzg-zoomed .tzg-hint { display: block; }

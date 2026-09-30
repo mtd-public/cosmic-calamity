@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Metal Snake">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#05070a">
+<meta name="description" content="Metal Snake: Cosmic Calamity. A retro top-down stealth game: a cyborg operative infiltrates the alien occupiers to stop their secret weapon.">
+<title>Metal Snake: Cosmic Calamity</title>
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;700;800&family=VT323&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="touch-zoom-guard/touch-zoom-guard.css">
+<link rel="stylesheet" href="css/style.css">
+<script src="touch-zoom-guard/touch-zoom-guard.js"></script>
+</head>
+<body>
+<div id="app">
+  <canvas id="game"></canvas>
+  <div id="scan"></div>
+
+  <!-- HUD (never takes input) -->
+  <div id="hud" class="hidden">
+    <div class="bezel hud-left">
+      <div class="row"><span class="lbl">SHIELD</span><div class="bar"><div id="lifeFill"></div></div></div>
+      <div class="row gear"><span class="lbl">RAIL-P</span><span id="ammo" class="num">00</span><span id="card" class="hidden">KEYCARD</span></div>
+      <div id="objective"></div>
+    </div>
+    <div id="phase" class="hidden"><span id="phaseName">ALERT</span><span id="phaseTime" class="num">00.00</span></div>
+    <div class="bezel hud-right">
+      <canvas id="radar" width="72" height="72"></canvas>
+      <div class="radar-lbl">MOTION SENSOR</div>
+    </div>
+  </div>
+  <div id="prompt" class="hidden"></div>
+  <div id="toast"></div>
+
+  <!-- Touch controls -->
+  <div id="touch" class="hidden">
+    <div id="stickZone" data-touch-control><div id="stickBase"><div id="stickKnob"></div></div></div>
+    <div id="btns">
+      <button id="btnFire" class="tbtn" aria-label="Fire">FIRE</button>
+      <button id="btnAct" class="tbtn" aria-label="Action">ACT</button>
+    </div>
+  </div>
+  <button id="btnPause" class="tbtn pause hidden" aria-label="Pause">&#10074;&#10074;</button>
+
+  <!-- Title -->
+  <div id="title" class="screen" data-touch-allow>
+    <canvas id="stars"></canvas>
+    <div class="title-wrap">
+      <div class="kicker">TACTICAL EXTRATERRESTRIAL ESPIONAGE</div>
+      <h1 class="logo"><span>METAL</span><span>SNAKE</span></h1>
+      <div class="sub">COSMIC CALAMITY</div>
+      <div class="menu">
+        <button class="btn" data-action="start">NEW GAME</button>
+        <button class="btn hidden" id="btnContinue" data-action="continue">CONTINUE</button>
+        <button class="btn" data-action="controls">HOW TO PLAY</button>
+        <button class="btn" id="btnSound" data-action="sound">SOUND: ON</button>
+      </div>
+      <div class="teach">SNEAK PAST THE ALIENS &middot; TAKE THEM DOWN FROM BEHIND &middot; HIDE IN LOCKERS</div>
+    </div>
+  </div>
+
+  <!-- Stage select -->
+  <div id="select" class="screen hidden" data-touch-allow>
+    <div class="panel">
+      <div class="panel-bar">UEDF // MISSION ARCHIVE</div>
+      <h2>SELECT STAGE</h2>
+      <div class="menu" id="stageList"></div>
+      <div class="menu"><button class="btn" data-action="back">BACK</button></div>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div id="help" class="screen hidden dim" data-touch-allow>
+    <div class="panel wide">
+      <div class="panel-bar">UEDF // FIELD MANUAL</div>
+      <h2>HOW TO PLAY</h2>
+      <div class="cols">
+        <div>
+          <h3>KEYBOARD</h3>
+          <table class="keys">
+            <tr><td>MOVE</td><td>WASD / ARROWS</td></tr>
+            <tr><td>SNEAK</td><td>HOLD SHIFT</td></tr>
+            <tr><td>ACT</td><td>J / SPACE / E</td></tr>
+            <tr><td>FIRE</td><td>K / F</td></tr>
+            <tr><td>PAUSE</td><td>ESC / P</td></tr>
+            <tr><td>MUTE</td><td>M</td></tr>
+            <tr><td>HELP</td><td>?</td></tr>
+          </table>
+          <h3>TOUCH</h3>
+          <p>LEFT THUMB: STICK (PUSH LIGHTLY TO SNEAK). RIGHT THUMB: ACT / FIRE.</p>
+          <h3>GAMEPAD</h3>
+          <p>STICK / D-PAD MOVE &middot; A ACT &middot; X / RB FIRE &middot; START PAUSE</p>
+        </div>
+        <div>
+          <h3>TACTICS</h3>
+          <p>STAY OUT OF VISION CONES. <span class="y">YELLOW</span> = CALM, <span class="o">ORANGE</span> = SUSPICIOUS, <span class="r">RED</span> = ALERT.</p>
+          <p>ACT BEHIND A TROOPER: SILENT TAKEDOWN. HEAVIES MUST BE STUNNED FIRST: PUNCH, THEN TAKE DOWN.</p>
+          <p>ACT BESIDE A LOCKER, BIN OR BOX: HIDE INSIDE. DON'T LET THEM SEE YOU GET IN.</p>
+          <p>ACT AGAINST A WALL: KNOCK TO LURE A GUARD.</p>
+          <p>A ROUND INTO AN UNAWARE BACK DROPS A TROOPER. GUNFIRE CARRIES.</p>
+          <p>TALL GRASS HIDES YOU UNLESS THEY ARE CLOSE. ALERTS JAM THE MOTION SENSOR.</p>
+        </div>
+      </div>
+      <div class="menu"><button class="btn" data-action="back">BACK</button></div>
+    </div>
+  </div>
+
+  <!-- Stage card -->
+  <div id="stagecard" class="screen hidden" data-touch-allow>
+    <div class="stage-num" id="stageNum">STAGE 1</div>
+    <div class="stage-name" id="stageName">TRUCE DEPOT 7</div>
+    <div class="stage-loc" id="stageLoc"></div>
+  </div>
+
+  <!-- Terminal (comms) -->
+  <div id="codec" class="screen hidden" data-touch-allow>
+    <div class="term">
+      <div class="term-bar"><span>UEDF SECURE TERMINAL</span><span id="termChan">CH 141.12</span></div>
+      <div class="term-body">
+        <div class="term-pic">
+          <canvas id="portR" width="48" height="48"></canvas>
+          <div class="pname" id="nameR">COL. HALE</div>
+          <div class="freq-bars" id="freqBars"></div>
+        </div>
+        <div class="term-text"><div id="codecWho" class="who"></div><span id="codecText"></span><span class="cursor blink">&#9608;</span></div>
+      </div>
+      <div class="term-bar bottom"><span id="termPage">PAGE 1/1</span><span class="blink" id="codecNext">[ ACT ] CONTINUE</span></div>
+    </div>
+    <button class="skip" id="codecSkip">SKIP &#9654;&#9654;</button>
+  </div>
+
+  <!-- Pause -->
+  <div id="pause" class="screen hidden dim" data-touch-allow>
+    <div class="panel">
+      <div class="panel-bar">UEDF // SUSPENDED</div>
+      <h2>PAUSED</h2>
+      <p id="pauseObj" class="obj"></p>
+      <div class="menu">
+        <button class="btn" data-action="resume">RESUME</button>
+        <button class="btn" data-action="restart">RESTART STAGE</button>
+        <button class="btn" data-action="controls">HOW TO PLAY</button>
+        <button class="btn" id="btnSound2" data-action="sound">SOUND: ON</button>
+        <button class="btn" data-action="quit">QUIT TO TITLE</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Game over -->
+  <div id="gameover" class="screen hidden dim" data-touch-allow>
+    <div class="panel">
+      <div class="panel-bar red">SIGNAL LOST</div>
+      <h2 class="red">SNAKE? SNAKE?!</h2>
+      <p class="big red">SNAAAAAKE!</p>
+      <p id="goReason"></p>
+      <div class="menu">
+        <button class="btn" data-action="retry">CONTINUE</button>
+        <button class="btn" data-action="quit">EXIT</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Stage clear -->
+  <div id="clear" class="screen hidden dim" data-touch-allow>
+    <div class="panel">
+      <div class="panel-bar">UEDF // DEBRIEF</div>
+      <h2>STAGE CLEAR</h2>
+      <table class="stats" id="clearStats"></table>
+      <div class="rank">CODENAME: <span id="clearRank">FOX</span></div>
+      <div class="menu"><button class="btn" data-action="next">PROCEED</button></div>
+    </div>
+  </div>
+
+  <!-- Ending -->
+  <div id="ending" class="screen hidden" data-touch-allow>
+    <canvas id="stars2"></canvas>
+    <div class="panel over">
+      <div class="panel-bar">UEDF // OPERATION LULLABY</div>
+      <h2>MISSION COMPLETE</h2>
+      <p>THE LULLABY ARRAY IS DESTROYED.<br>HUMANITY SLEEPS SAFE... FOR NOW.</p>
+      <table class="stats" id="endStats"></table>
+      <div class="rank">FINAL CODENAME: <span id="endRank">FOX</span></div>
+      <div class="menu"><button class="btn" data-action="quit">THE END</button></div>
+    </div>
+  </div>
+
+  <div class="tzg-hint">PINCH OUT TO RESET ZOOM</div>
+</div>
+
+<script src="js/audio.js"></script>
+<script src="js/input.js"></script>
+<script src="js/art.js"></script>
+<script src="js/levels.js"></script>
+<script src="js/game.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
