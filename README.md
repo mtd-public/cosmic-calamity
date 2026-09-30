@@ -1,6 +1,6 @@
 # METAL SNAKE: COSMIC CALAMITY
 
-A retro **3D isometric** stealth game in the spirit of 16-bit *Metal Gear*. The characters and props are anime-style, cel-shaded and ink-outlined, rendered at a low resolution and dithered so everything reads as pixel art. The UI takes its cues from Bungie's *Marathon* trilogy (AIs and aliens, steel terminals, the motion sensor).
+A retro **3D isometric** stealth game in the spirit of 16-bit *Metal Gear*. The level props are anime-style, cel-shaded and ink-outlined. The characters are '90s *Marathon*-style models: flat-shaded, metallic and grimy, with glowing eyes and vents. Everything renders at a low resolution and is dithered so it reads as pixel art. The UI takes its cues from Bungie's *Marathon* trilogy (AIs and aliens, steel terminals, the motion sensor).
 
 Two years into an uneasy "V"-style truce, Earth and the reptilian **Vyrr** share an occupation. The Vyrr are building something. The military sends in **Snake**, a cyborg operative bonded to a military AI called **IRIS**. His route runs through their warehouses, a field camp and a research annex. Then he stows away to their mothership in orbit.
 

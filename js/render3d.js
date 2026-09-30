@@ -152,7 +152,7 @@ const Render3D = (() => {
     postMat.uniforms.uAspect.value = W / H;
     // show about 11-12 tiles across the short side
     const aspect = W / H;
-    viewHalf = aspect >= 1 ? 4.3 : 4.3 / aspect * 0.8;
+    viewHalf = (aspect >= 1 ? 3.6 : 3.6 / aspect * 0.8) / (Number(new URLSearchParams(location.search).get('zoom')) || 1);
     camera.left = -viewHalf * aspect; camera.right = viewHalf * aspect; camera.top = viewHalf; camera.bottom = -viewHalf;
     camera.updateProjectionMatrix();
   }
@@ -450,6 +450,275 @@ const Render3D = (() => {
     return g;
   }
 
+  // ------------------------------------------------------------------ '90s Marathon-style characters
+  // Flat-shaded, metallic and grimy (pre-rendered-sprite era look) instead of chibi toon: lanky
+  // digitigrade aliens with elongated crested skulls and multiple glowing eyes, an armoured brute
+  // with an arm cannon, a floating sentinel eye, and a cyborg operative in segmented armour.
+  const grime = (() => {   // panel seams, rivets, soot and rust streaks at 90s texel density
+    const c = document.createElement('canvas'); c.width = c.height = 32; const g = c.getContext('2d');
+    g.fillStyle = '#c8c8c8'; g.fillRect(0, 0, 32, 32);
+    for (let i = 0; i < 260; i++) { const v = 150 + Math.random() * 100 | 0; g.fillStyle = `rgb(${v},${v},${v})`; g.fillRect(Math.random() * 32 | 0, Math.random() * 32 | 0, 1, 1); }
+    g.fillStyle = 'rgba(40,40,40,.6)'; for (const y of [0, 11, 22]) g.fillRect(0, y, 32, 1); for (const x of [0, 9, 20]) g.fillRect(x, 0, 1, 32);
+    g.fillStyle = 'rgba(255,255,255,.3)'; for (const y of [1, 12, 23]) g.fillRect(0, y, 32, 1);
+    g.fillStyle = 'rgba(30,30,30,.7)'; for (const y of [3, 14, 25]) for (let x = 3; x < 32; x += 6) g.fillRect(x, y, 1, 1);
+    for (let i = 0; i < 6; i++) { g.fillStyle = 'rgba(70,45,30,.35)'; g.fillRect(Math.random() * 32 | 0, Math.random() * 24 | 0, 1, 4 + Math.random() * 8 | 0); }
+    const t = new THREE.CanvasTexture(c); t.magFilter = t.minFilter = THREE.NearestFilter; t.generateMipmaps = false; return t;
+  })();
+  const scales = (() => {  // mottled reptile hide
+    const c = document.createElement('canvas'); c.width = c.height = 32; const g = c.getContext('2d');
+    g.fillStyle = '#d0d0d0'; g.fillRect(0, 0, 32, 32);
+    for (let y = 0; y < 32; y += 3) for (let x = (y % 6 ? 0 : 2); x < 32; x += 4) { const v = 150 + Math.random() * 90 | 0; g.fillStyle = `rgb(${v},${v},${v})`; g.fillRect(x, y, 3, 2); g.fillStyle = 'rgba(0,0,0,.25)'; g.fillRect(x, y + 2, 3, 1); }
+    for (let i = 0; i < 8; i++) { g.fillStyle = 'rgba(60,20,70,.35)'; g.fillRect(Math.random() * 28 | 0, Math.random() * 28 | 0, 4, 3); }
+    const t = new THREE.CanvasTexture(c); t.magFilter = t.minFilter = THREE.NearestFilter; t.generateMipmaps = false; return t;
+  })();
+  const stdCache = {};
+  function metal(c, o = {}) {
+    const k = 'm' + c + (o.rough || '') + (o.ei || '');
+    return stdCache[k] || (stdCache[k] = new THREE.MeshStandardMaterial({ color: c, map: grime, metalness: o.metal != null ? o.metal : 0.45, roughness: o.rough || 0.45, flatShading: true, emissive: c, emissiveIntensity: o.ei || 0.3 }));
+  }
+  function hide(c) {
+    const k = 'h' + c;
+    return stdCache[k] || (stdCache[k] = new THREE.MeshStandardMaterial({ color: c, map: scales, metalness: 0.05, roughness: 0.7, flatShading: true, emissive: c, emissiveIntensity: 0.32 }));
+  }
+  function cloth(c) {
+    const k = 'c' + c;
+    return stdCache[k] || (stdCache[k] = new THREE.MeshStandardMaterial({ color: c, metalness: 0, roughness: 0.85, flatShading: true, emissive: c, emissiveIntensity: 0.3 }));
+  }
+  const tapers = {};
+  function taper(bot, top, h) { // square frustum
+    const k = bot + ':' + top + ':' + h;
+    if (!tapers[k]) { const g = new THREE.CylinderGeometry(top * 0.7071, bot * 0.7071, h, 4, 1); g.rotateY(Math.PI / 4); tapers[k] = g; }
+    return tapers[k];
+  }
+  // mesh with an optional thin ink edge (only big silhouette parts get one)
+  function seg(parent, geo, mat, p, sc = [1, 1, 1], o = {}) {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(p[0], p[1], p[2]); m.scale.set(sc[0], sc[1], sc[2]);
+    if (o.r) m.rotation.set(o.r[0], o.r[1], o.r[2]);
+    parent.add(m);
+    if (o.ol) { const ol = new THREE.Mesh(geo, outlineMat); ol.scale.setScalar(1.07); m.add(ol); }
+    return m;
+  }
+  const grp = (parent, p, r) => { const g = new THREE.Group(); g.position.set(p[0], p[1], p[2]); if (r) g.rotation.set(r[0], r[1], r[2]); parent.add(g); return g; };
+
+  // limb: hip -> thigh -> knee -> shin (-> foot); returns joints for animation
+  function limb(parent, at, dims, mats, digi) {
+    const hip = grp(parent, at);
+    const [tw, tl, sw2, sl] = dims;
+    seg(hip, taper(tw * 0.8, tw, tl), mats.thigh, [0, -tl / 2, 0], [1, 1, 1.1], { ol: true });
+    const knee = grp(hip, [0, -tl, 0]);
+    seg(knee, G.sph, mats.joint, [0, 0, 0.01], [tw * 0.55, tw * 0.55, tw * 0.6]);
+    seg(knee, taper(sw2 * 0.8, sw2, sl), mats.shin, [0, -sl / 2, 0], [1, 1, 1.15], { ol: true });
+    const ankle = grp(knee, [0, -sl, 0]);
+    if (digi) { // clawed hoof
+      seg(ankle, G.box, mats.foot, [0, -0.02, 0.05], [0.07, 0.05, 0.16]);
+      for (const x of [-0.025, 0.025]) seg(ankle, G.cone4, mats.claw, [x, -0.03, 0.15], [0.015, 0.06, 0.015], { r: [Math.PI / 2, 0, 0] });
+    } else seg(ankle, G.box, mats.foot, [0, -0.03, 0.04], [sw2 * 1.15, 0.07, 0.2], { ol: true });
+    return { hip, knee, ankle, digi };
+  }
+  function armRig(parent, at, dims, mats) {
+    const sh = grp(parent, at);
+    const [uw, ul, fw, fl] = dims;
+    seg(sh, taper(uw * 0.8, uw, ul), mats.upper, [0, -ul / 2, 0], [1, 1, 1], { ol: true });
+    const el = grp(sh, [0, -ul, 0]);
+    seg(el, taper(fw * 0.75, fw, fl), mats.fore, [0, -fl / 2, 0]);
+    const hand = grp(el, [0, -fl, 0]);
+    return { sh, el, hand };
+  }
+
+  // --- the operative (player, and prisoners in jumpsuits)
+  function makeOperative(kind) {
+    const pr = kind !== 'snake';
+    const C = pr ? { armor: 0xd8742a, suit: 0xe07a2a, dark: 0x4a4440 } : { armor: 0x7f9458, suit: 0x3a4250, dark: 0x2a2e36 };
+    const g = new THREE.Group(); shadowDisc(g, 0.3);
+    const body = grp(g, [0, 0, 0]);
+    const arm = (c) => metal(c, { metal: 0.2, rough: 0.6 });
+    const mats = { thigh: pr ? cloth(C.suit) : arm(C.armor), shin: pr ? cloth(C.suit) : arm(C.armor), joint: metal(0x40444c), foot: metal(C.dark, { rough: 0.8 }) };
+    const legs = [limb(body, [-0.09, 0.62, 0], [0.13, 0.3, 0.11, 0.3], mats), limb(body, [0.09, 0.62, 0], [0.13, 0.3, 0.11, 0.3], mats)];
+    seg(body, taper(0.24, 0.28, 0.12), pr ? cloth(C.dark) : metal(0x3a3a34), [0, 0.66, 0], [1, 1, 0.75]);                   // belt / pelvis
+    const torso = grp(body, [0, 0.7, 0]);
+    seg(torso, taper(0.28, 0.38, 0.34), pr ? cloth(C.suit) : arm(C.armor), [0, 0.17, 0], [1, 1, 0.62], { ol: true });   // chest
+    if (!pr) {
+      for (let i = 0; i < 3; i++) seg(torso, G.box, metal(0x565e48), [0, 0.08 + i * 0.08, 0.12], [0.2 - i * 0.02, 0.03, 0.02]);   // ribbed plate
+      const pack = grp(torso, [0, 0.2, -0.16]);
+      seg(pack, G.box, metal(0x2a2e34), [0, 0, 0], [0.26, 0.3, 0.12], { ol: true });
+      seg(pack, G.cyl, glow(0x4fe3ff), [0, 0.02, -0.065], [0.05, 0.16, 0.02], { r: [0, 0, 0] });                       // power cell
+      for (const x of [-0.09, 0.09]) seg(pack, G.cyl6, metal(0x585e66), [x, 0.17, 0], [0.025, 0.08, 0.025]);
+      seg(torso, taper(0.16, 0.12, 0.1), arm(C.armor), [-0.22, 0.32, 0], [1, 1, 1.1], { ol: true });                   // left pauldron
+    } else seg(torso, G.box, cloth(0xffffff), [-0.08, 0.24, 0.115], [0.08, 0.05, 0.01]);                                // prisoner number
+    const arms = [
+      armRig(torso, [-0.22, 0.3, 0], [0.09, 0.26, 0.08, 0.24], { upper: pr ? cloth(C.suit) : arm(C.armor), fore: pr ? cloth(C.suit) : arm(0x5e6a4a) }),
+      armRig(torso, [0.22, 0.3, 0], [0.09, 0.26, 0.08, 0.24], pr ? { upper: cloth(C.suit), fore: cloth(C.suit) } : { upper: metal(0xc3ccd6, { metal: 0.8, rough: 0.3 }), fore: metal(0xc3ccd6, { metal: 0.8, rough: 0.3 }) }),
+    ];
+    for (const a of arms) seg(a.hand, G.box, pr ? hide(kind === 'hybrid' ? 0xe8d8cc : 0xe8b898) : metal(0x2a2e34), [0, -0.03, 0], [0.07, 0.07, 0.08]);
+    if (!pr) { // cybernetic right arm: glowing joints
+      seg(arms[1].sh, G.sph, glow(0x4fe3ff), [0, -0.01, 0], [0.05, 0.05, 0.05]);
+      seg(arms[1].el, G.sph, glow(0x4fe3ff), [0, 0, 0], [0.04, 0.04, 0.04]);
+      seg(arms[1].el, G.box, glow(0x4fe3ff), [0.045, -0.12, 0], [0.005, 0.16, 0.02]);
+    }
+    // head
+    const head = grp(torso, [0, 0.45, 0.01]);
+    const skin = hide(kind === 'hybrid' ? 0xe8d8cc : 0xe8b898);
+    seg(head, G.box, skin, [0, 0.08, 0], [0.17, 0.19, 0.18], { ol: true });
+    seg(head, G.box, skin, [0, 0.02, 0.07], [0.12, 0.08, 0.06]);                                                          // jaw
+    const hairC = kind === 'hybrid' ? 0xd4dce8 : kind === 'human' ? 0x5a3a28 : 0x2a1e1a;
+    seg(head, G.box, cloth(hairC), [0, 0.17, -0.01], [0.18, 0.05, 0.19]);
+    seg(head, G.box, cloth(hairC), [0, 0.1, -0.085], [0.18, 0.14, 0.03]);
+    let tails = null;
+    if (!pr) {
+      seg(head, G.box, cloth(0xd02a3a), [0, 0.14, 0], [0.185, 0.035, 0.19]);                                             // bandana
+      tails = [seg(head, G.box, cloth(0xd02a3a), [0.04, 0.13, -0.16], [0.04, 0.025, 0.16], { r: [0.3, 0.2, 0] }),
+               seg(head, G.box, cloth(0xb01e2e), [-0.03, 0.12, -0.15], [0.035, 0.025, 0.14], { r: [0.5, -0.2, 0] })];
+      seg(head, G.box, metal(0xb9c6d2, { metal: 0.8, rough: 0.3 }), [0.05, 0.09, 0.092], [0.08, 0.06, 0.01]);             // optic plate
+      seg(head, G.box, glow(0xff2a2a), [0.055, 0.09, 0.098], [0.04, 0.025, 0.005]);                                        // red optic
+      seg(head, G.box, cloth(0x1a1a22), [-0.045, 0.09, 0.092], [0.03, 0.02, 0.005]);
+    } else {
+      for (const x of [-0.045, 0.045]) seg(head, G.box, kind === 'hybrid' && x > 0 ? glow(0x4fe3ff) : cloth(0x1a1a22), [x, 0.09, 0.092], [0.03, 0.02, 0.005]);
+      if (kind === 'hybrid') seg(head, G.box, glow(0x4fe3ff), [-0.09, 0.08, 0.02], [0.005, 0.08, 0.1]);
+    }
+    // pistol (drawn when firing) and holster
+    const gun = grp(arms[1].hand, [0, -0.05, 0.05]);
+    if (!pr) {
+      seg(gun, G.box, metal(0x22262c), [0, 0, 0.06], [0.05, 0.07, 0.16]);
+      seg(gun, G.cyl, metal(0x34383e), [0, 0.01, 0.2], [0.022, 0.14, 0.022], { r: [Math.PI / 2, 0, 0] });                  // suppressor
+    }
+    body.scale.setScalar(1.12);
+    g.userData.rig = { kind: pr ? 'pow' : 'snake', legs, arms, torso, head, gun, tails, body };
+    g.userData.body = body; g.userData.tails = tails;
+    return g;
+  }
+
+  // --- Vyrr trooper: tall, hunched, digitigrade, elongated crested skull, four eyes, shock lance
+  function makeTrooper() {
+    const g = new THREE.Group(); shadowDisc(g, 0.28);
+    const body = grp(g, [0, 0, 0]);
+    const skin = hide(0x93b87c), armor = metal(0x5a6072), sash = cloth(0xa02a3c);
+    const mats = { thigh: skin, shin: skin, joint: armor, foot: metal(0x2a2c34), claw: metal(0xd8d0c0, { metal: 0.2 }) };
+    const legs = [limb(body, [-0.1, 0.64, 0], [0.1, 0.34, 0.075, 0.36], mats, true), limb(body, [0.1, 0.64, 0], [0.1, 0.34, 0.075, 0.36], mats, true)];
+    for (const L of legs) { L.hip.rotation.x = -0.5; L.knee.rotation.x = 1.0; L.ankle.rotation.x = -0.5; }
+    seg(body, taper(0.2, 0.24, 0.1), armor, [0, 0.66, 0], [1, 1, 0.7]);
+    const torso = grp(body, [0, 0.7, 0], [0.38, 0, 0]);    // hunched forward
+    seg(torso, taper(0.2, 0.34, 0.4), skin, [0, 0.2, 0], [1, 1, 0.62], { ol: true });
+    for (let i = 0; i < 3; i++) seg(torso, G.box, armor, [0, 0.12 + i * 0.1, 0.07], [0.26 + i * 0.03, 0.045, 0.1]);   // rib armour
+    seg(torso, G.box, sash, [0, 0.14, 0.118], [0.11, 0.3, 0.012]);                                                     // rank tabard
+    for (let i = 0; i < 4; i++) seg(torso, G.oct, glow(0xc34bff), [0, 0.1 + i * 0.09, -0.075], [0.025, 0.03, 0.025]);  // spine nodes
+    seg(torso, G.box, metal(0xc8a44a, { metal: 0.9 }), [0, 0.3, 0.126], [0.05, 0.05, 0.01]);                          // insignia
+    for (const sx of [-1, 1]) seg(torso, G.cone4, armor, [sx * 0.2, 0.44, -0.04], [0.05, 0.2, 0.05], { r: [-0.5, 0, sx * 0.4], ol: true });   // shoulder fins
+    // neck + elongated skull
+    seg(torso, G.cyl6, skin, [0, 0.47, 0.05], [0.035, 0.16, 0.035], { r: [0.5, 0, 0] });
+    const head = grp(torso, [0, 0.56, 0.11], [-0.38, 0, 0]);
+    seg(head, G.sph, skin, [0, 0.04, -0.06], [0.11, 0.1, 0.24], { r: [-0.55, 0, 0], ol: true });                    // swept-back skull
+    seg(head, G.box, skin, [0, -0.02, 0.11], [0.1, 0.07, 0.14]);                                                      // snout
+    seg(head, G.box, hide(0x5a7248), [0, -0.06, 0.1], [0.08, 0.03, 0.12]);                                            // jaw
+    for (const [x, y, r] of [[-0.042, 0.035, 0.028], [0.042, 0.035, 0.028], [-0.06, 0.0, 0.02], [0.06, 0.0, 0.02]]) seg(head, G.sph, glow(0xffd23a), [x, y, 0.135], [r, r * 0.7, 0.012]);
+    for (const x of [-0.04, 0.04]) seg(head, G.cone4, metal(0xe8e0d0, { metal: 0.1, ei: 0.4 }), [x, -0.08, 0.15], [0.014, 0.07, 0.014], { r: [2.6, 0, x > 0 ? 0.3 : -0.3] });   // tusks
+    for (let i = 0; i < 3; i++) seg(head, G.cone4, metal(0x9a5ac8, { ei: 0.45 }), [0, 0.13 - i * 0.02, -0.07 - i * 0.1], [0.035, 0.16 - i * 0.03, 0.035], { r: [-1.1, 0, 0] }, );   // crest
+    const skinArm = { upper: skin, fore: skin };
+    const arms = [armRig(torso, [-0.2, 0.38, 0.02], [0.06, 0.3, 0.05, 0.3], skinArm), armRig(torso, [0.2, 0.38, 0.02], [0.06, 0.3, 0.05, 0.3], skinArm)];
+    for (const a of arms) for (const x of [-0.02, 0.02]) seg(a.hand, G.cone4, mats.claw, [x, -0.04, 0.01], [0.012, 0.07, 0.012], { r: [Math.PI, 0, 0] });
+    // shock lance held in the right hand
+    const gun = grp(arms[1].hand, [0, -0.03, 0.02]);
+    seg(gun, G.cyl6, metal(0x2a2c34), [0, 0.1, 0], [0.018, 0.9, 0.018]);
+    seg(gun, G.box, metal(0x5a4a78), [0, 0.5, 0], [0.05, 0.08, 0.05]);
+    const tip = seg(gun, G.oct, glow(0xc34bff), [0, 0.6, 0], [0.04, 0.07, 0.04]);
+    seg(gun, G.tor, glow(0xe8a0ff), [0, 0.52, 0], [0.05, 0.05, 0.05], { r: [Math.PI / 2, 0, 0] });
+    g.userData.rig = { kind: 'trooper', legs, arms, torso, head, gun, tip, body, hunch: 0.38 };
+    g.userData.body = body; g.userData.gun = gun;
+    return g;
+  }
+
+  // --- Vyrr enforcer: armoured brute, carapace hump, acid vents, arm cannon
+  function makeEnforcer() {
+    const g = new THREE.Group(); shadowDisc(g, 0.4);
+    const body = grp(g, [0, 0, 0]);
+    const armor = metal(0x7a64b0, { metal: 0.35, rough: 0.5 }), dark = metal(0x3c3450, { metal: 0.3 }), acid = glow(0x7dff4a);
+    const mats = { thigh: armor, shin: armor, joint: dark, foot: dark };
+    const legs = [limb(body, [-0.15, 0.56, 0], [0.18, 0.26, 0.17, 0.28], mats), limb(body, [0.15, 0.56, 0], [0.18, 0.26, 0.17, 0.28], mats)];
+    const torso = grp(body, [0, 0.6, 0], [0.18, 0, 0]);
+    seg(torso, taper(0.4, 0.62, 0.5), armor, [0, 0.25, 0], [1, 1, 0.66], { ol: true });
+    seg(torso, G.sph, dark, [0, 0.46, -0.12], [0.28, 0.2, 0.2], { ol: true });                                        // carapace hump
+    for (let i = 0; i < 3; i++) seg(torso, G.cone4, metal(0xd8d0c0, { metal: 0.2 }), [(i - 1) * 0.12, 0.6, -0.16], [0.035, 0.16, 0.035], { r: [-0.5, 0, (i - 1) * -0.3] });   // back spikes
+    for (let i = 0; i < 2; i++) seg(torso, G.box, acid, [0, 0.3 + i * 0.08, -0.215], [0.24, 0.02, 0.01]);            // rear vents
+    for (let i = 0; i < 3; i++) seg(torso, G.box, acid, [0, 0.14 + i * 0.07, 0.19], [0.2, 0.018, 0.01]);           // vents
+    for (const sx of [-1, 1]) { seg(torso, G.sph, armor, [sx * 0.36, 0.44, 0], [0.16, 0.12, 0.16], { ol: true }); seg(torso, G.tor, acid, [sx * 0.36, 0.4, 0], [0.13, 0.13, 0.13], { r: [Math.PI / 2, 0, 0] }); }     // pauldrons
+    const head = grp(torso, [0, 0.52, 0.08]);
+    seg(head, G.box, dark, [0, 0.03, 0], [0.18, 0.14, 0.16], { ol: true });
+    seg(head, G.box, glow(0xff4b5c), [0, 0.04, 0.083], [0.13, 0.025, 0.005]);                                        // visor slit
+    seg(head, G.cone4, dark, [0, 0.13, -0.03], [0.05, 0.12, 0.05], { r: [-0.6, 0, 0] });
+    const arms = [
+      armRig(torso, [-0.4, 0.38, 0], [0.12, 0.26, 0.1, 0.22], { upper: armor, fore: dark }),
+      armRig(torso, [0.4, 0.38, 0], [0.12, 0.26, 0.12, 0.2], { upper: armor, fore: dark }),
+    ];
+    for (let i = 0; i < 3; i++) seg(arms[0].hand, G.cone4, metal(0xd8d0c0, { metal: 0.3 }), [-0.04 + i * 0.04, -0.05, 0.02], [0.02, 0.1, 0.02], { r: [Math.PI, 0, 0] });
+    const gun = grp(arms[1].hand, [0, -0.02, 0.04]);
+    seg(gun, G.cyl, dark, [0, 0, 0.14], [0.08, 0.4, 0.08], { r: [Math.PI / 2, 0, 0], ol: true });
+    seg(gun, G.tor, acid, [0, 0, 0.2], [0.085, 0.085, 0.085]);
+    const tip = seg(gun, G.cyl, acid, [0, 0, 0.345], [0.05, 0.02, 0.05], { r: [Math.PI / 2, 0, 0] });
+    g.userData.rig = { kind: 'enforcer', legs, arms, torso, head, gun, tip, body, hunch: 0.18 };
+    g.userData.body = body; g.userData.gun = gun;
+    return g;
+  }
+
+  // --- sentinel drone: floating chrome eye, spinning blades, trailing tendrils
+  function makeSentinel() {
+    const g = new THREE.Group(); const sh = shadowDisc(g, 0.26);
+    const body = grp(g, [0, 0.95, 0]);
+    seg(body, G.sph, metal(0xc0c6d4, { metal: 0.6, rough: 0.3, ei: 0.35 }), [0, 0, 0], [0.18, 0.18, 0.18], { ol: true });
+    const band = seg(body, G.tor, glow(0xffe066), [0, 0, 0], [0.19, 0.19, 0.19], { r: [Math.PI / 2, 0, 0] });
+    seg(body, G.sph, metal(0x2a2c34), [0, 0, 0.08], [0.13, 0.13, 0.12]);
+    const eye = seg(body, G.sph, glow(0xffe066), [0, 0, 0.17], [0.07, 0.07, 0.04]);
+    seg(body, G.tor, metal(0xb0b6c4, { metal: 0.9, rough: 0.2 }), [0, 0, 0.16], [0.1, 0.1, 0.1]);
+    const fins = grp(body, [0, 0, 0]);
+    for (let i = 0; i < 3; i++) {
+      const f = grp(fins, [0, 0, 0], [0, 0, i * Math.PI * 2 / 3]);
+      seg(f, taper(0.02, 0.07, 0.34), metal(0x8a70c8, { ei: 0.4 }), [0, 0.28, -0.04], [1, 1, 0.3], { ol: true });
+      seg(f, G.box, glow(0xc34bff), [0, 0.4, -0.02], [0.02, 0.06, 0.01]);
+    }
+    seg(body, G.cone4, metal(0x6a6e7c), [0, 0.24, -0.05], [0.03, 0.14, 0.03]);
+    const tendrils = [];
+    for (let i = 0; i < 3; i++) { const t = grp(body, [(i - 1) * 0.07, -0.14, -0.04]); seg(t, G.cyl6, metal(0x3a3c48), [0, -0.14, 0], [0.012, 0.28, 0.012]); seg(t, G.sph, glow(0xc34bff), [0, -0.29, 0], [0.02, 0.02, 0.02]); tendrils.push(t); }
+    g.userData.rig = { kind: 'sentinel', fins, tendrils, body };
+    g.userData.body = body; g.userData.eye = eye; g.userData.band = band; g.userData.shadow = sh;
+    return g;
+  }
+
+  // per-frame pose + animation for the rigs above
+  function animateRig(m, st) {
+    const R = m.userData.rig;
+    if (!R) return;
+    const { t, moving, anim } = st;
+    if (R.kind === 'sentinel') {
+      R.fins.rotation.z = t * 1.6;
+      R.tendrils.forEach((tn, i) => { tn.rotation.x = Math.sin(t * 3 + i) * 0.35 + (st.moving ? 0.5 : 0.15); tn.rotation.z = Math.cos(t * 2.3 + i) * 0.2; });
+      return;
+    }
+    const ph = moving ? anim : 0, sw = moving ? Math.sin(ph) : 0;
+    const digi = R.kind === 'trooper';
+    R.legs.forEach((L, i) => {
+      const s = i ? -sw : sw, lift = moving ? Math.max(0, i ? Math.cos(ph) : -Math.cos(ph)) : 0;
+      if (digi) { L.hip.rotation.x = -0.5 + s * 0.45; L.knee.rotation.x = 1.0 + lift * 0.5; L.ankle.rotation.x = -0.5 - lift * 0.3; }
+      else { L.hip.rotation.x = s * 0.55; L.knee.rotation.x = lift * 0.8; L.ankle.rotation.x = -lift * 0.2; }
+    });
+    R.body.position.y = moving ? Math.abs(Math.cos(ph)) * 0.035 : Math.sin(t * 2) * 0.006;
+    const breathe = Math.sin(t * 2.2) * 0.03;
+    R.torso.rotation.x = (R.hunch || 0) + breathe + (moving ? 0.06 : 0);
+    R.torso.rotation.z = st.stun ? Math.sin(t * 14) * 0.15 : 0;
+    const [aL, aR] = R.arms;
+    aL.sh.rotation.set(-sw * 0.6 - (R.hunch || 0), 0, digi ? 0.15 : 0.08); aL.el.rotation.x = -0.3;
+    aR.sh.rotation.set(sw * 0.6 - (R.hunch || 0), 0, digi ? -0.15 : -0.08); aR.el.rotation.x = -0.3;
+    if (R.head) R.head.rotation.y = moving ? 0 : Math.sin(t * 0.7) * 0.25;
+    if (digi && R.gun) R.gun.rotation.x = 0.1;   // lance carried upright
+    if (st.aim) {
+      aR.sh.rotation.set(-1.45 - (R.hunch || 0), 0, 0); aR.el.rotation.x = 0;
+      if (digi && R.gun) R.gun.rotation.x = 1.55;  // lance levelled like a rifle
+    }
+    if (st.punch) { aR.sh.rotation.set(-1.6 - (R.hunch || 0), 0, 0); aR.el.rotation.x = 0; }
+    if (st.plant) { const j = Math.sin(t * 20) * 0.2; aL.sh.rotation.x = -1.1 + j; aR.sh.rotation.x = -1.1 - j; aL.el.rotation.x = aR.el.rotation.x = -0.6; }
+    if (R.gun && R.kind === 'snake') R.gun.visible = !!(st.aim || st.punch);
+    if (R.tip) { const k = st.aim ? 1.4 + Math.sin(t * 30) * 0.3 : 1; if (!R.tipBase) R.tipBase = R.tip.scale.clone(); R.tip.scale.copy(R.tipBase).multiplyScalar(k); }
+    if (R.tails) R.tails.forEach((tl, i) => { tl.rotation.x = 0.3 + Math.sin(t * 10 + i) * 0.25 + (moving ? 0.4 : 0); });
+  }
+
   // ------------------------------------------------------------------ sprites (icons, floaters, bars)
   const spriteTex = {};
   function textSprite(text, color, scale = 1) {
@@ -503,8 +772,8 @@ const Render3D = (() => {
   function lieDown(m, down) {
     const b = m.userData.body;
     if (!b) return;
-    if (down) { b.rotation.x = -Math.PI / 2; b.position.y = 0.14; b.position.z = 0; }
-    else { b.rotation.x = 0; }
+    if (down) { b.rotation.x = -Math.PI / 2; b.position.y = 0.16; b.position.z = 0.1; }
+    else { b.rotation.x = 0; b.position.z = 0; }
   }
 
   function coneFor(e) {
@@ -566,16 +835,12 @@ const Render3D = (() => {
     const P = S.player;
 
     // player
-    const pm = modelFor(P, () => { const m = makeHuman('snake'); addXray(m, 'player'); return m; });
+    const pm = modelFor(P, () => { const m = makeOperative('snake'); addXray(m, 'player'); return m; });
     pm.visible = !P.hidden;
     pm.position.set(P.x * U, 0, P.y * U);
     pm.rotation.y = rotYFromDir(P.dir);
-    animWalk(pm, P.moving, P.anim);
+    animateRig(pm, { t, moving: P.moving, anim: P.anim * 0.8, aim: P.shootT > 0 || P.fireCD > 0.1, punch: P.punchT > 0, plant: !!P.planting });
     lieDown(pm, P.dead);
-    if (pm.userData.tails) pm.userData.tails.forEach((tl, i) => { tl.rotation.x = 0.3 + Math.sin(t * 10 + i) * 0.25 + (P.moving ? 0.4 : 0); });
-    if (P.punchT > 0 && pm.userData.arms[1]) pm.userData.arms[1].rotation.x = -1.5;
-    if ((P.shootT > 0 || P.fireCD > 0.1) && pm.userData.arms[1]) pm.userData.arms[1].rotation.x = -1.4;
-    if (P.planting) { pm.userData.arms[0].rotation.x = -1.1 + Math.sin(t * 20) * 0.2; pm.userData.arms[1].rotation.x = -1.1 - Math.sin(t * 20) * 0.2; }
     const blink = P.inv > 0 && ((t * 30) | 0) % 2;
     if (!P.hidden) pm.visible = !blink;
 
@@ -583,11 +848,12 @@ const Render3D = (() => {
     for (const e of S.enemies) {
       let m;
       if (e.type === 'drone') {
-        m = modelFor(e, () => { const d = makeDrone(); addXray(d, 'enemy'); return d; });
+        m = modelFor(e, () => { const d = makeSentinel(); addXray(d, 'enemy'); return d; });
         m.position.set(e.x * U, 0, e.y * U);
         m.userData.body.position.y = 0.95 + Math.sin(t * 4 + e.ox) * 0.06;
+        animateRig(m, { t, moving: e.walking });
         m.rotation.y = rotYFromDir(e.dir);
-        m.userData.eye.material = glow(e.state === 'alert' ? 0xff3040 : (e.state === 'patrol' || e.state === 'return') ? 0xffe066 : 0xff9a3c);
+        m.userData.eye.material = m.userData.band.material = glow(e.state === 'alert' ? 0xff3040 : (e.state === 'patrol' || e.state === 'return') ? 0xffe066 : 0xff9a3c);
         m.visible = !e.dead || e.deadT < 0.1;
       } else if (e.type === 'camera') {
         m = modelFor(e, makeCamera);
@@ -597,16 +863,15 @@ const Render3D = (() => {
         m.userData.led.visible = ((t * 2) | 0) % 2 === 0;
         m.visible = !e.dead;
       } else {
-        m = modelFor(e, () => { const h = makeHuman(e.type); addXray(h, 'enemy'); return h; });
+        m = modelFor(e, () => { const h = e.type === 'heavy' ? makeEnforcer() : makeTrooper(); addXray(h, 'enemy'); return h; });
         m.position.set(e.x * U, 0, e.y * U);
         m.rotation.y = rotYFromDir(e.dir);
         const down = e.ko > 0;
-        animWalk(m, e.walking && !down, e.anim);
+        animateRig(m, { t: t + e.ox, moving: e.walking && !down, anim: e.anim * 0.9, aim: e.state === 'alert' && e.sees && !down, stun: e.stun > 0 });
         lieDown(m, down);
         if (m.userData.gun) m.userData.gun.visible = !down;
         if (e.dead) { const k = Math.min(1, e.deadT / 1.2); m.scale.set(1 + k * 0.3, Math.max(0.02, 1 - k), 1 + k * 0.3); }
         else m.scale.set(1, 1, 1);
-        if (e.stun > 0 && m.userData.body) m.userData.body.rotation.z = Math.sin(t * 14) * 0.12; else if (m.userData.body) m.userData.body.rotation.z = 0;
         // KO stars
         if (down) {
           const s = overlayFor(e, 'zz', () => textSprite('Z Z', '#ffe66b'));
@@ -632,11 +897,10 @@ const Render3D = (() => {
     }
     // prisoners
     for (const w of S.pows) {
-      const m = modelFor(w, () => { const r = w.kind === 'ai' ? makeRobotPow() : makeHuman(w.kind); addXray(r, 'pow'); return r; });
+      const m = modelFor(w, () => { const r = w.kind === 'ai' ? makeRobotPow() : makeOperative(w.kind); addXray(r, 'pow'); return r; });
       m.position.set(w.x * U, 0, w.y * U);
       m.rotation.y = rotYFromDir(w.dir);
-      animWalk(m, w.moving, w.anim);
-      if (w.state === 'caged' && m.userData.body) m.userData.body.position.y = Math.abs(Math.sin(t * 1.5 + w.x)) * 0.02;
+      if (m.userData.rig) animateRig(m, { t: t + w.x, moving: w.moving, anim: w.anim * 0.8 }); else animWalk(m, w.moving, w.anim);
     }
     // pickups
     for (const p of S.pickups) {

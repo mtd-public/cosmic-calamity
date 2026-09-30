@@ -155,3 +155,16 @@ Screen shake on takedowns, hits and charges. A red hit flash with an invincibili
   - `sim-check`: 21/21 PASS, including capture → breakout → rescue.
   - `smoke`: 4 profiles PASS with 0 errors and 0 scroll; touch fire and act verified.
   - tap-spam: PASS on iPhone and iPad.
+
+### Marathon-style characters (branch `claude/marathon-characters`)
+- **Style:** the chibi cel-shaded characters became '90s pre-rendered-sprite-era models: flat-shaded metal with a low-res grime texture and a mottled scaly hide, with emissive glows. Level art stays iso toon cubes.
+- **Snake:** a cyborg operative in segmented olive armor, with a backpack power core, a chrome cyber arm with glowing joints, a red optic, bandana tails and a suppressed pistol that appears when firing.
+- **Vyrr Trooper:** tall (about 1.45 tiles), hunched, on digitigrade legs. It has a swept-back crested skull, four glowing eyes, tusks, rib armor, a rank tabard, glowing spine nodes and a shock lance it levels to fire.
+- **Vyrr Enforcer:** an armored brute with a carapace hump and back spikes, acid-green vents and pauldron rings, a red visor slit, a claw hand and an arm cannon.
+- **Sentinel drone:** a floating chrome eye with a state-coloured equator band, spinning blades and swaying tendrils.
+- **Prisoners:** they share the operative rig in orange jumpsuits.
+- **Rigs:** knees and ankles, with aim, punch, plant and stun poses.
+- **Camera:** zoomed in slightly (half-height 4.3 → 3.6 tiles) so the detail reads in play.
+- **Verification:**
+  - `sim-check`: 21/21 PASS.
+  - `smoke`: 4 profiles PASS with 0 errors and 0 scroll.
